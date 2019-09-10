@@ -36,5 +36,6 @@ INJECTIONS = {
     'CN1466 and CN1827': 'rAAV-eHGT_078m-minBglobin-SYFP2-WPRE3-BGHpA;rAAV-3xhI56icore-minBG-tdTomato-WPRE3-BGHpA',
     'CN1461': 'rAAV-eHGT_073m-minBglobin-SYFP2-WPRE3-BGHpA',
     'CN1988 and CN1913': 'rAAV-EF1a-fDIO-EGFP-WPRE-HGHpA;rAAV-eHGT_078m-minBG-FlpO-WPRE-HGHpA',
-    'CN1849': 'rAAV-3xHGT_073m(core)-minBG-SYFP2-WPRE3-BGHpA'
+    'CN1849': 'rAAV-3xHGT_073m(core)-minBG-SYFP2-WPRE3-BGHpA',
+    'ChrimsonR-Kv-EYFP':'AAV-Syn-FLEX-ChrimsonR-eYFP-Kv2.1'
 }
