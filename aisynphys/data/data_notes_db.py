@@ -25,7 +25,12 @@ PairNotes = make_table(
 if config.synphys_db_host is None:
     db = NoDatabase("Cannot access data_notes; no DB specified in config.synphys_db_host")
 else:
-    db = Database(config.synphys_db_host, config.synphys_db_host_rw, "data_notes", DataNotesORMBase)
+    if not hasattr(config, 'notes_db_name'):
+        name = "data_notes"
+        print('Please add "notes_db_name:"data_notes"" (or whatever you want the notes_db name to be) to aisynphys/config.yml')
+    else:
+        name = config.notes_db_name
+    db = Database(config.synphys_db_host, config.synphys_db_host_rw, name, DataNotesORMBase)
 
 
 def get_pair_notes_record(expt_id, pre_cell_id, post_cell_id, session=None):
