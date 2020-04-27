@@ -136,15 +136,20 @@ def response_query(session, pair, max_ind_freq=50):
     q = session.query(db.PulseResponse, db.PatchClampRecording, db.StimPulse)
     
     q = q.join(db.StimPulse, db.PulseResponse.stim_pulse)
-    q = q.join(db.StimSpike, db.StimSpike.stim_pulse_id==db.StimPulse.id)
+    q = q.outerjoin(db.StimSpike, db.StimSpike.stim_pulse_id==db.StimPulse.id)
     q = q.join(db.Recording, db.PulseResponse.recording)
     q = q.join(db.PatchClampRecording)
-    q = q.join(db.MultiPatchProbe)
+    q = q.outerjoin(db.MultiPatchProbe)
     
     q = q.filter(db.PulseResponse.pair_id == pair.id)
-    q = q.filter(db.MultiPatchProbe.induction_frequency <= max_ind_freq)
+
+    mpp_count = session.query(db.MultiPatchProbe).count()
+    if mpp_count == 0 or max_ind_freq is None:
+        return q
+    else:
+        q = q.filter(db.MultiPatchProbe.induction_frequency <= max_ind_freq)
+        return q
     
-    return q
 
 
 def sort_responses(pulse_responses):
