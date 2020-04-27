@@ -79,8 +79,8 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
             [{'name': ht, 'type': 'bool'} for ht in comment_hashtag[1:]])
         self.rigs = db.query(db.Experiment.rig_name).distinct().all()
         self.operators = db.query(db.Experiment.operator_name).distinct().all()
-        self.rig_select = Parameter.create(name='Rig', type='group', children=[{'name': rig[0], 'type': 'bool'} for rig in self.rigs])
-        self.operator_select = Parameter.create(name='Operator', type='group', children=[{'name': operator[0], 'type': 'bool'} for operator in self.operators])
+        self.rig_select = Parameter.create(name='Rig', type='group', children=[{'name': str(rig[0]), 'type': 'bool'} for rig in self.rigs])
+        self.operator_select = Parameter.create(name='Operator', type='group', children=[{'name': str(operator[0]), 'type': 'bool'} for operator in self.operators])
         self.data_type = Parameter.create(name='Reduce data to:', type='group', children=[
             {'name': 'Pairs with data', 'type': 'bool', 'value': True},
             {'name': 'Synapse is None', 'type': 'bool'}])
