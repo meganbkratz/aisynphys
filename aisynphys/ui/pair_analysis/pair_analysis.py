@@ -87,7 +87,7 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         #    {'name': 'Pairs with data', 'type': 'bool', 'value': True},
         #    {'name': 'Synapse is None', 'type': 'bool'}])
         #[self.select_ptree.addParameters(param) for param in [self.data_type, self.rig_select, self.operator_select, self.hash_select]]
-        self.experiment_browser = self.pair_analyzer.experiment_browser
+        self.experiment_browser = ExperimentBrowser()
         self.v_splitter = pg.QtGui.QSplitter()
         self.v_splitter.setOrientation(pg.QtCore.Qt.Vertical)
         self.expt_selector = ExperimentSelector(default_session, notes_session)
@@ -525,7 +525,7 @@ class PairAnalysis(object):
         self.user_latency.sigValueChanged.connect(self.latency_superline.set_value_from_ctrl_panel)
             
         self.ctrl_panel.output_params.child('Fit parameters').sigTreeStateChanged.connect(self.colorize_fit)
-        self.experiment_browser = ExperimentBrowser()
+        #self.experiment_browser = ExperimentBrowser()
         self.fit_compare = pg.DiffTreeWidget()
         self.meta_compare = pg.DiffTreeWidget()
         self.nrmse_thresh = 4
