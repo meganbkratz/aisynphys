@@ -52,6 +52,7 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         pg.QtGui.QWidget.__init__(self)
         self.default_session = default_session
         self.notes_session = notes_session
+        
         self.layout = pg.QtGui.QGridLayout()
         self.setLayout(self.layout)
         self.h_splitter = pg.QtGui.QSplitter()
@@ -68,31 +69,33 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         self.fit_ptree = ptree.ParameterTree(showHeader=False)
         self.fit_ptree.addParameters(self.output_params, showTop=False)
         self.save_btn = pg.FeedbackButton('Save Analysis')
-        self.expt_btn = pg.QtGui.QPushButton('Set Experiments')
+        #self.expt_btn = pg.QtGui.QPushButton('Set Experiments')
         self.fit_btn = pg.QtGui.QPushButton('Fit Responses')
         self.ic_plot = self.pair_analyzer.ic_plot
         self.vc_plot = self.pair_analyzer.vc_plot
-        self.select_ptree = ptree.ParameterTree(showHeader=False)
-        self.hash_select = Parameter.create(name='Hashtags', type='group', children=
-            [{'name': 'With multiple selected:', 'type': 'list', 'values': ['Include if any appear', 'Include if all appear'], 'value': 'Include if any appear'}]+
-            [{'name': '#', 'type': 'bool'}] +
-            [{'name': ht, 'type': 'bool'} for ht in comment_hashtag[1:]])
-        self.rigs = db.query(db.Experiment.rig_name).distinct().all()
-        self.operators = db.query(db.Experiment.operator_name).distinct().all()
-        self.rig_select = Parameter.create(name='Rig', type='group', children=[{'name': str(rig[0]), 'type': 'bool'} for rig in self.rigs])
-        self.operator_select = Parameter.create(name='Operator', type='group', children=[{'name': str(operator[0]), 'type': 'bool'} for operator in self.operators])
-        self.data_type = Parameter.create(name='Reduce data to:', type='group', children=[
-            {'name': 'Pairs with data', 'type': 'bool', 'value': True},
-            {'name': 'Synapse is None', 'type': 'bool'}])
-        [self.select_ptree.addParameters(param) for param in [self.data_type, self.rig_select, self.operator_select, self.hash_select]]
+        #self.select_ptree = ptree.ParameterTree(showHeader=False)
+        #self.hash_select = Parameter.create(name='Hashtags', type='group', children=
+        #    [{'name': 'With multiple selected:', 'type': 'list', 'values': ['Include if any appear', 'Include if all appear'], 'value': 'Include if any appear'}]+
+        #    [{'name': '#', 'type': 'bool'}] +
+        #    [{'name': ht, 'type': 'bool'} for ht in comment_hashtag[1:]])
+        #self.rigs = db.query(db.Experiment.rig_name).distinct().all()
+        #self.operators = db.query(db.Experiment.operator_name).distinct().all()
+        #self.rig_select = Parameter.create(name='Rig', type='group', children=[{'name': str(rig[0]), 'type': 'bool'} for rig in self.rigs])
+        #self.operator_select = Parameter.create(name='Operator', type='group', children=[{'name': str(operator[0]), 'type': 'bool'} for operator in self.operators])
+        #self.data_type = Parameter.create(name='Reduce data to:', type='group', children=[
+        #    {'name': 'Pairs with data', 'type': 'bool', 'value': True},
+        #    {'name': 'Synapse is None', 'type': 'bool'}])
+        #[self.select_ptree.addParameters(param) for param in [self.data_type, self.rig_select, self.operator_select, self.hash_select]]
         self.experiment_browser = self.pair_analyzer.experiment_browser
         self.v_splitter = pg.QtGui.QSplitter()
         self.v_splitter.setOrientation(pg.QtCore.Qt.Vertical)
-        self.expt_splitter = pg.QtGui.QSplitter()
-        self.expt_splitter.setOrientation(pg.QtCore.Qt.Vertical)
-        self.h_splitter.addWidget(self.expt_splitter)
-        self.expt_splitter.addWidget(self.select_ptree)
-        self.expt_splitter.addWidget(self.expt_btn)
+        self.expt_selector = ExperimentSelector(default_session, notes_session)
+        #self.expt_splitter = pg.QtGui.QSplitter()
+        #self.expt_splitter.setOrientation(pg.QtCore.Qt.Vertical)
+        #self.h_splitter.addWidget(self.expt_splitter)
+        #self.expt_splitter.addWidget(self.select_ptree)
+        #self.expt_splitter.addWidget(self.expt_btn)
+        self.h_splitter.addWidget(self.expt_selector)
         self.h_splitter.addWidget(self.v_splitter)
         self.v_splitter.addWidget(self.experiment_browser)
         self.v_splitter.addWidget(self.ptree)
@@ -121,7 +124,8 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         # self.next_pair_button.clicked.connect(self.load_next_pair)
         self.experiment_browser.itemSelectionChanged.connect(self.selected_pair)
         self.save_btn.clicked.connect(self.save_to_db)
-        self.expt_btn.clicked.connect(self.get_expts)
+        #self.expt_btn.clicked.connect(self.get_expts)
+        self.expt_selector.sigNewExperimentsRetrieved.connect(self.set_expts)
         self.fit_btn.clicked.connect(self.pair_analyzer.fit_response_update)
 
     def save_to_db(self):
@@ -132,62 +136,10 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
             self.save_btn.failure()
             raise
 
-    def get_expts(self):
-        expt_query = db.query(db.Experiment)
-        synapse_none = self.data_type['Synapse is None']
-        if synapse_none:
-            subquery = db.query(db.Pair.experiment_id).filter(db.Pair.has_synapse==None).subquery()
-            expt_query = expt_query.filter(db.Experiment.id.in_(subquery))
-        selected_rigs = [rig.name() for rig in self.rig_select.children() if rig.value() is True]
-        if len(selected_rigs) != 0:
-            expt_query = expt_query.filter(db.Experiment.rig_name.in_(selected_rigs))
-        selected_operators = [operator.name() for operator in self.operator_select.children() if operator.value()is True]
-        if len(selected_operators) != 0:
-            expt_query = expt_query.filter(db.Experiment.operator_name.in_(selected_operators))
-        selected_hashtags = [ht.name() for ht in self.hash_select.children()[1:] if ht.value() is True]
-        if len(selected_hashtags) != 0:
-            timestamps = self.get_expts_hashtag(selected_hashtags)
-            expt_query = expt_query.filter(db.Experiment.ext_id.in_(timestamps))
-        expts = expt_query.all()
-        self.set_expts(expts)
-
-    def get_expts_hashtag(self, selected_hashtags):
-        q = self.notes_session.query(notes_db.PairNotes)
-        pairs_to_include = []
-        note_pairs = q.all()
-        note_pairs.sort(key=lambda p: p.expt_id)
-        for p in note_pairs:
-            comments = p.notes.get('comments')
-            if comments is None:
-                continue    
-            if len(selected_hashtags) == 1:
-                hashtag = selected_hashtags[0]
-                if hashtag == '#':
-                    if hashtag in comments and all([ht not in comments for ht in comment_hashtag[1:]]):
-                        print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
-                        pairs_to_include.append(p)
-                else:
-                    if hashtag in comments:
-                        print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
-                        pairs_to_include.append(p)
-                
-            if len(selected_hashtags) > 1:
-                hashtag_present = [ht in comments for ht in selected_hashtags]
-                or_expts = self.hash_select['With multiple selected:'] == 'Include if any appear'
-                and_expts = self.hash_select['With multiple selected:'] == 'Include if all appear'
-                if or_expts and any(hashtag_present):
-                    print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
-                    pairs_to_include.append(p)
-                if and_expts and all(hashtag_present):
-                    print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
-                    pairs_to_include.append(p)
-
-        return set([pair.expt_id for pair in pairs_to_include])
-
     def set_expts(self, expts):
         with pg.BusyCursor():
             self.experiment_browser.clear()
-            has_data = self.data_type['Pairs with data']
+            has_data = self.expt_selector.data_type['Pairs with data']
             if not has_data:
                 self.experiment_browser.populate(experiments=expts, all_pairs=True)
             else:
@@ -224,6 +176,96 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         fit = self.pair_analyzer.last_fit[mode, holding]
         self.fit_explorer = FitExplorer(fit)
         self.fit_explorer.show()
+
+class ExperimentSelector(pg.QtGui.QWidget):
+
+    sigNewExperimentsRetrieved = pg.QtCore.Signal(object) # a list of db experiments
+
+    def __init__(self, db_session, notes_session):
+        pg.QtGui.QWidget.__init__(self)
+        self.db_session = db_session
+        self.notes_db_session = notes_session
+
+        layout = pg.QtGui.QVBoxLayout()
+        self.setLayout(layout)
+        self.select_ptree = ptree.ParameterTree(showHeader=False)
+        self.hash_select = Parameter.create(name='Hashtags', type='group', children=
+            [{'name': 'With multiple selected:', 'type': 'list', 'values': ['Include if any appear', 'Include if all appear'], 'value': 'Include if any appear'}]+
+            [{'name': '#', 'type': 'bool'}] +
+            [{'name': ht, 'type': 'bool'} for ht in comment_hashtag[1:]])
+
+        self.rigs = db.query(db.Experiment.rig_name).distinct().all()
+        self.operators = db.query(db.Experiment.operator_name).distinct().all()
+
+        self.rig_select = Parameter.create(name='Rig', type='group', children=[{'name': str(rig[0]), 'type': 'bool'} for rig in self.rigs])
+        self.operator_select = Parameter.create(name='Operator', type='group', children=[{'name': str(operator[0]), 'type': 'bool'} for operator in self.operators])
+        self.data_type = Parameter.create(name='Reduce data to:', type='group', children=[
+            {'name': 'Pairs with data', 'type': 'bool', 'value': True},
+            {'name': 'Synapse is None', 'type': 'bool'}])
+
+        [self.select_ptree.addParameters(param) for param in [self.data_type, self.rig_select, self.operator_select, self.hash_select]]
+
+        layout.addWidget(self.select_ptree)
+
+        self.getExptBtn = pg.QtGui.QPushButton("Get Experiments")
+
+        layout.addWidget(self.getExptBtn)
+        layout.setStretch(0, 10)
+
+        self.getExptBtn.clicked.connect(self.get_experiments)
+
+    def get_experiments(self):
+        expt_query = self.db_session.query(db.Experiment)
+        synapse_none = self.data_type['Synapse is None']
+        if synapse_none:
+            subquery = db.query(db.Pair.experiment_id).filter(db.Pair.has_synapse==None).subquery()
+            expt_query = expt_query.filter(db.Experiment.id.in_(subquery))
+        selected_rigs = [rig.name() for rig in self.rig_select.children() if rig.value() is True]
+        if len(selected_rigs) != 0:
+            expt_query = expt_query.filter(db.Experiment.rig_name.in_(selected_rigs))
+        selected_operators = [operator.name() for operator in self.operator_select.children() if operator.value()is True]
+        if len(selected_operators) != 0:
+            expt_query = expt_query.filter(db.Experiment.operator_name.in_(selected_operators))
+        selected_hashtags = [ht.name() for ht in self.hash_select.children()[1:] if ht.value() is True]
+        if len(selected_hashtags) != 0:
+            timestamps = self.get_expts_hashtag(selected_hashtags)
+            expt_query = expt_query.filter(db.Experiment.ext_id.in_(timestamps))
+        expts = expt_query.all()
+        #self.set_expts(expts)
+        self.sigNewExperimentsRetrieved.emit(expts)
+
+    def get_expts_hashtag(self, selected_hashtags):
+        q = self.notes_db_session.query(notes_db.PairNotes)
+        pairs_to_include = []
+        note_pairs = q.all()
+        note_pairs.sort(key=lambda p: p.expt_id)
+        for p in note_pairs:
+            comments = p.notes.get('comments')
+            if comments is None:
+                continue    
+            if len(selected_hashtags) == 1:
+                hashtag = selected_hashtags[0]
+                if hashtag == '#':
+                    if hashtag in comments and all([ht not in comments for ht in comment_hashtag[1:]]):
+                        print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
+                        pairs_to_include.append(p)
+                else:
+                    if hashtag in comments:
+                        print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
+                        pairs_to_include.append(p)
+                
+            if len(selected_hashtags) > 1:
+                hashtag_present = [ht in comments for ht in selected_hashtags]
+                or_expts = self.hash_select['With multiple selected:'] == 'Include if any appear'
+                and_expts = self.hash_select['With multiple selected:'] == 'Include if all appear'
+                if or_expts and any(hashtag_present):
+                    print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
+                    pairs_to_include.append(p)
+                if and_expts and all(hashtag_present):
+                    print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
+                    pairs_to_include.append(p)
+
+        return set([pair.expt_id for pair in pairs_to_include])
 
 
 class ControlPanel(object):
