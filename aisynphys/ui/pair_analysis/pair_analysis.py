@@ -52,8 +52,9 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         pg.QtGui.QWidget.__init__(self)
         self.default_session = default_session
         self.notes_session = notes_session
-        
+
         self.layout = pg.QtGui.QGridLayout()
+        self.layout.setContentsMargins(3,3,3,3)
         self.setLayout(self.layout)
         self.h_splitter = pg.QtGui.QSplitter()
         self.h_splitter.setOrientation(pg.QtCore.Qt.Horizontal)
@@ -187,7 +188,9 @@ class ExperimentSelector(pg.QtGui.QWidget):
         self.notes_db_session = notes_session
 
         layout = pg.QtGui.QVBoxLayout()
+        layout.setContentsMargins(3,3,3,3)
         self.setLayout(layout)
+        
         self.select_ptree = ptree.ParameterTree(showHeader=False)
         self.hash_select = Parameter.create(name='Hashtags', type='group', children=
             [{'name': 'With multiple selected:', 'type': 'list', 'values': ['Include if any appear', 'Include if all appear'], 'value': 'Include if any appear'}]+
