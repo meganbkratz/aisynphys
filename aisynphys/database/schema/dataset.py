@@ -108,6 +108,8 @@ class StimPulseBase(object):
     @property
     def recorded_tseries(self):
         if self._rec_tseries is None:
+            if self.data is None:
+                return None
             self._rec_tseries = TSeries(self.data, sample_rate=default_sample_rate, t0=self.data_start_time)
         return self._rec_tseries
 
@@ -116,6 +118,8 @@ class StimPulseBase(object):
         # can we work Stimulus objects into here, rather than generating manually??
         if self._stim_tseries is None:
             rec_ts = self.recorded_tseries  # todo: avoid loading full data for this step
+            if rec_ts is None:
+                return None
             data = np.zeros(shape=rec_ts.shape)
             pstart = rec_ts.index_at(self.onset_time)
             pstop = rec_ts.index_at(self.onset_time + self.duration)
@@ -172,6 +176,8 @@ class PulseResponseBase(object):
     @property
     def post_tseries(self):
         if self._post_tseries is None:
+            if self.data is None:
+                return None
             self._post_tseries = TSeries(self.data, sample_rate=default_sample_rate, t0=self.data_start_time)
         return self._post_tseries
 

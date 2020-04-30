@@ -58,7 +58,7 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         self.setLayout(self.layout)
         self.h_splitter = pg.QtGui.QSplitter()
         self.h_splitter.setOrientation(pg.QtCore.Qt.Horizontal)
-        self.pair_analyzer = PairAnalysis()
+        self.pair_analyzer = MultipatchPairAnalysis()
         self.fit_explorer = None
         self.ctrl_panel = self.pair_analyzer.ctrl_panel
         self.user_params = self.ctrl_panel.user_params
@@ -90,7 +90,7 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         self.experiment_browser = ExperimentBrowser()
         self.v_splitter = pg.QtGui.QSplitter()
         self.v_splitter.setOrientation(pg.QtCore.Qt.Vertical)
-        self.expt_selector = ExperimentSelector(default_session, notes_session)
+        self.expt_selector = ExperimentSelector(default_session, notes_session, hashtags=comment_hashtag)
         #self.expt_splitter = pg.QtGui.QSplitter()
         #self.expt_splitter.setOrientation(pg.QtCore.Qt.Vertical)
         #self.h_splitter.addWidget(self.expt_splitter)
@@ -182,7 +182,7 @@ class ExperimentSelector(pg.QtGui.QWidget):
 
     sigNewExperimentsRetrieved = pg.QtCore.Signal(object) # a list of db experiments
 
-    def __init__(self, db_session, notes_session):
+    def __init__(self, db_session, notes_session, hashtags=None):
         pg.QtGui.QWidget.__init__(self)
         self.db_session = db_session
         self.notes_db_session = notes_session
@@ -192,10 +192,12 @@ class ExperimentSelector(pg.QtGui.QWidget):
         self.setLayout(layout)
 
         self.select_ptree = ptree.ParameterTree(showHeader=False)
+        if hashtags is None:
+            hashtags = ['']
         self.hash_select = Parameter.create(name='Hashtags', type='group', children=
             [{'name': 'With multiple selected:', 'type': 'list', 'values': ['Include if any appear', 'Include if all appear'], 'value': 'Include if any appear'}]+
             [{'name': '#', 'type': 'bool'}] +
-            [{'name': ht, 'type': 'bool'} for ht in comment_hashtag[1:]])
+            [{'name': ht, 'type': 'bool'} for ht in hashtags[1:]])
 
         self.rigs = db.query(db.Experiment.rig_name).distinct().all()
         self.operators = db.query(db.Experiment.operator_name).distinct().all()
@@ -276,6 +278,7 @@ class ControlPanel(object):
         self.user_latency = Parameter.create(name='User Latency', type='float', suffix='s', siPrefix=True, dec=True, value=default_latency)
         self.synapse = Parameter.create(name='Synapse call', type='list', values={'Excitatory': 'ex', 'Inhibitory': 'in', 'None': None})
         self.gap = Parameter.create(name='Gap junction call', type='bool')
+        
         fit_cat = ['-55 VC', '-70 VC', '-55 IC', '-70 IC']
         fit_param = [
             {'name': c, 'type': 'group', 'children': [
@@ -285,6 +288,7 @@ class ControlPanel(object):
             ]} for c in fit_cat
         ]
         self.fit_params = Parameter.create(name='Fit parameters', type='group', children=fit_param)
+
         self.warn_param = Parameter.create(name='Warnings', type='text', readonly=True)
         self.comments = Parameter.create(name='Comments', type='group', children=[
             {'name': 'Hashtag', 'type': 'list', 'values': comment_hashtag, 'value': ''},
@@ -302,6 +306,17 @@ class ControlPanel(object):
         ])
 
         self.comments.child('Hashtag').sigValueChanged.connect(self.add_text_to_comments)
+
+    def create_new_fit_params(self, catagory_names):
+        self.fit_params.clearChildren()
+        fit_params = [
+            {'name': c, 'type': 'group', 'children': [
+                {'name': 'Parameter:', 'type': 'str', 'readonly': True, 'value': 'Amplitude, Latency, Rise time, Decay tau, NRMSE'},
+                {'name': 'Value:', 'type': 'str', 'readonly': True},
+                {'name': 'Fit Pass', 'type': 'bool'},
+            ]} for c in catagory_names]
+        for i, p in enumerate(fit_params):
+            self.fit_params.insertChild(i, p)
 
     def add_text_to_comments(self):
         text = self.comments['Hashtag']
@@ -506,7 +521,8 @@ class SuperLine(pg.QtCore.QObject):
         self.set_value(value, block_fit=True)
 
 
-class PairAnalysis(object):
+
+class MultipatchPairAnalysis(object):
     def __init__(self):
         self.ctrl_panel = ControlPanel()
         
