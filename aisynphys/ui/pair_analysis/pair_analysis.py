@@ -250,6 +250,16 @@ class ControlPanel(object):
                 if fit_pass:
                     group.child('Fit Pass').setValue(False)
 
+    def update_fit_param(self, key, values):
+        param_names = ['amp', 'xoffset', 'rise_time', 'decay_tau', 'nrmse']
+        if key[0] == 'vc':
+            suffix = ['A', 's', 's', 's', '']
+        elif key[0] == 'ic':
+            suffix = ['V', 's', 's', 's', '']
+
+        group = self.output_params.child('Fit parameters', str(key))
+        formatted_values = self.format_fit_output(values, param_names, suffix)
+        group.child('Value:').setValue(formatted_values)
 
     def format_fit_output(self, values, name, suffix):
         format_list = []
