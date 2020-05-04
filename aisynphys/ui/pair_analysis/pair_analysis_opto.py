@@ -139,6 +139,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             ## create plots and parameter items for each catagory in sorted responses
             self.ctrl_panel.create_new_fit_params([str(k) for k in self.sorted_responses.keys()])
             self.create_new_plots(self.sorted_responses.keys())
+            self.fit_params = {key:{'initial':{}, 'fit':{}} for key in self.sorted_responses.keys()}
 
             self.plot_responses()
 
@@ -176,7 +177,37 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.plot_grid[(i,0)].autoRange()
             self.plot_grid[(i,0)].setXRange(-5e-3, 10e-3)
 
+    def fit_responses(self):
+        latency = self.ctrl_panel.user_params['User Latency']
+        latency_window = [latency-500e-6, latency+500e-6]
 
+        fit_color = {True: 'g', False: 'r'}
 
+        with pg.ProgressDialog("curve fitting..", maximum=len(self.sorted_responses)) as dlg:
+            for i, key in enumerate(self.sorted_responses.keys()): 
+                clamp_mode = key[0]
+                prs = self.sorted_responses[key]['qc_pass']
+                if len(prs) == 0:
+                    dlg += 1
+                    continue
+                    
+                tsl = PulseResponseList(prs).post_tseries(align='pulse', bsub=True)
+                average = tsl.mean()
+                fit = fit_psp(average, latency_window, clamp_mode, baseline_like_psp=True)
+                fit_ts = average.copy(data=fit.best_fit)
+                    
+                self.fit_params[key]['initial']['xoffset'] = latency
+                self.fit_params[key]['fit']['nrmse'] = fit.nrmse()
+                self.fit_params[key]['fit'].update(fit.best_values)
 
+                fit_pass = fit.nrmse() < self.nrmse_threshold
+                self.ctrl_panel.output_params.child('Fit parameters', str(key), 'Fit Pass').setValue(fit_pass)
+                self.ctrl_panel.update_fit_param(key, self.fit_params[key]['fit'])
 
+                self.plot_grid[(i,0)].plot(fit_ts.time_values, fit_ts.data, pen={'color':fit_color[fit_pass], 'width': 3})
+                
+                dlg += 1
+                if dlg.wasCanceled():
+                    raise Exception("User canceled fit")
+    
+        
