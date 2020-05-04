@@ -427,6 +427,11 @@ class SuperLine(pg.QtCore.QObject):
         value = ctrl_panel.value()
         self.set_value(value, block_fit=True)
 
+    def clear_lines(self):
+        for l in self.lines:
+            l.scene().removeItem(l)
+        self.lines = []
+
 
 
 class MultipatchPairAnalysis(object):

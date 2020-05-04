@@ -2,7 +2,10 @@ import pyqtgraph as pg
 from collections import OrderedDict
 
 from neuroanalysis.ui.plot_grid import PlotGrid
-from aisynphys.ui.pair_analysis.pair_analysis import ExperimentSelector, ControlPanel
+from neuroanalysis.fitting import fit_psp
+
+from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine
+from aisynphys.ui.experiment_selector import ExperimentSelector
 from aisynphys.ui.experiment_browser import ExperimentBrowser
 from aisynphys.avg_response_fit import get_pair_avg_fits, response_query, sort_responses_opto
 
@@ -12,6 +15,10 @@ from aisynphys.data import PulseResponseList
 
 
 class OptoPairAnalysisWindow(pg.QtGui.QWidget):
+
+    default_latency = 2e-3
+    nrmse_threshold = 4
+
     def __init__(self, default_session, notes_session):
         pg.QtGui.QWidget.__init__(self)
 
@@ -28,6 +35,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.expt_browser = ExperimentBrowser()
         self.ctrl_panel = ControlPanel()
         self.plot_grid = PlotGrid()
+        self.latency_superline = SuperLine()
 
         self.ptree = pg.parametertree.ParameterTree(showHeader=False)
         self.pair_param = pg.parametertree.Parameter.create(name='Current Pair', type='str', readonly=True)
@@ -53,6 +61,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         self.expt_selector.sigNewExperimentsRetrieved.connect(self.set_expts)
         self.expt_browser.itemSelectionChanged.connect(self.new_pair_selected)
+        self.latency_superline.sigPositionChanged.connect(self.ctrl_panel.set_latency)
+        self.fit_btn.clicked.connect(self.fit_responses)
 
     def set_expts(self, expts):
         with pg.BusyCursor():
@@ -66,6 +76,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
     def reset(self):
         self.pulse_responses = None
         self.sorted_responses = None
+        self.latency_superline.clear_lines()
         self.plot_grid.clear()
         self.ctrl_panel.fit_params.clearChildren()
         self.ctrl_panel.output_params.child('Comments', 'Hashtag').setValue('')
@@ -95,15 +106,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.pair_param.setValue(pair)
 
             self.load_pair(pair)
+            if record is not None:
+                self.load_saved_fit(record)
 
-            # if record is None:
-            #     self.pair_analyzer.load_pair(pair, self.default_session)
-            #     self.pair_analyzer.analyze_responses()
-            #     # self.pair_analyzer.fit_responses()
-            # else:
-            #     self.pair_analyzer.load_pair(pair, self.default_session, record=record)
-            #     self.pair_analyzer.analyze_responses()
-            #     self.pair_analyzer.load_saved_fit(record)
 
     def load_pair(self, pair):
         """Pull responses from db, sort into groups and plot."""
@@ -146,7 +151,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             plot = self.plot_grid[(i,0)]
             plot.setTitle(str(key))
             plot.setLabel('left', text="%dmV holding" % key[1], units=unit_map[key[0]])
-            plot.setLabel('bottom', text='Time from spike', units='s')
+            plot.setLabel('bottom', text='Time from stimulation', units='s')
+            plot.addItem(self.latency_superline.new_line(self.default_latency))
 
     def plot_responses(self):
         qc_color = {'qc_pass': (255, 255, 255, 100), 'qc_fail': (255, 0, 0, 100)}
