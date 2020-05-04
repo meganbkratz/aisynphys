@@ -2,7 +2,7 @@ import pyqtgraph as pg
 from collections import OrderedDict
 
 from neuroanalysis.ui.plot_grid import PlotGrid
-from aisynphys.pair_analysis import ExperimentSelector, ControlPanel
+from aisynphys.ui.pair_analysis.pair_analysis import ExperimentSelector, ControlPanel
 from aisynphys.ui.experiment_browser import ExperimentBrowser
 from aisynphys.avg_response_fit import get_pair_avg_fits, response_query, sort_responses_opto
 
