@@ -1,3 +1,4 @@
+import datetime
 import pyqtgraph as pg
 from collections import OrderedDict
 
@@ -43,6 +44,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.ptree.addParameters(self.ctrl_panel.user_params, showTop=False)
 
         self.fit_btn = pg.QtGui.QPushButton('Fit Responses')
+        self.fit_btn.setEnabled(False)
         self.fit_ptree = pg.parametertree.ParameterTree(showHeader=False)
         self.fit_ptree.addParameters(self.ctrl_panel.output_params, showTop=False)
 
@@ -62,7 +64,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.expt_selector.sigNewExperimentsRetrieved.connect(self.set_expts)
         self.expt_browser.itemSelectionChanged.connect(self.new_pair_selected)
         self.latency_superline.sigPositionChanged.connect(self.ctrl_panel.set_latency)
+        self.ctrl_panel.synapse.sigValueChanged.connect(self.synapse_call_changed)
         self.fit_btn.clicked.connect(self.fit_responses)
+        self.save_btn.clicked.connect(self.save_to_db)
 
     def set_expts(self, expts):
         with pg.BusyCursor():
@@ -108,6 +112,14 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.load_pair(pair)
             if record is not None:
                 self.load_saved_fit(record)
+
+    def synapse_call_changed(self):
+        value = self.ctrl_panel.synapse.value()
+        if value is None:
+            self.fit_btn.setEnabled(False)
+            ## probably also need to clear fit parameter items and plot items here
+        else:
+            self.fit_btn.setEnabled(True)
 
 
     def load_pair(self, pair):
@@ -209,5 +221,63 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                 dlg += 1
                 if dlg.wasCanceled():
                     raise Exception("User canceled fit")
+
+        self.generate_warnings()
+
+    def load_saved_fit(self, record):
+        raise Exception('implement me!')
+
+    def generate_warnings(self):
+        self.warnings = None
+
+    def save_to_db(self):
+        fit_pass = {}
+        for key in self.sorted_responses.keys():
+            fit_pass[key] = self.ctrl_panel.output_params['Fit parameters', str(key), 'Fit Pass']
+
+        expt_id = self.pair.experiment.ext_id
+        pre_cell_id = self.pair.pre_cell.ext_id
+        post_cell_id = self.pair.post_cell.ext_id
+        meta = {
+            'expt_id': expt_id,
+            'pre_cell_id': pre_cell_id,
+            'post_cell_id': post_cell_id,
+            'synapse_type': self.ctrl_panel.user_params['Synapse call'],
+            'gap_junction': self.ctrl_panel.user_params['Gap junction call'],
+            'comments': self.ctrl_panel.output_params['Comments', ''],
+        }
+
+        if self.ctrl_panel.user_params['Synapse call'] is not None:
+            meta.update({
+            'fit_parameters': self.fit_params,
+            'fit_pass': fit_pass,
+            'fit_warnings': self.warnings,
+            })
+        
+        session = notes_db.db.session(readonly=False)
+        record = notes_db.get_pair_notes_record(expt_id, pre_cell_id, post_cell_id, session=session)
+
+        if record is None:
+            entry = notes_db.PairNotes(
+                expt_id=expt_id,
+                pre_cell_id=pre_cell_id,
+                post_cell_id=post_cell_id, 
+                notes=meta,
+                modification_time=datetime.datetime.now(),
+            )
+            session.add(entry)
+            session.commit()
+        else:
+            self.print_pair_notes(meta, record)
+            msg = pg.QtGui.QMessageBox.question(None, "Pair Analysis", 
+                "The record you are about to save conflicts with what is in the Pair Notes database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?",
+                pg.QtGui.QMessageBox.Yes | pg.QtGui.QMessageBox.No)
+            if msg == pg.QtGui.QMessageBox.Yes:
+                record.notes = meta
+                record.modification_time = datetime.datetime.now()
+                session.commit() 
+            else:
+                raise Exception('Save Cancelled')
+        session.close()
     
         
