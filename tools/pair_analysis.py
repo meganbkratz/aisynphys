@@ -5,6 +5,7 @@ import pyqtgraph as pg
 from aisynphys.database import default_db as db
 import aisynphys.data.data_notes_db as notes_db
 from aisynphys.ui.pair_analysis.pair_analysis import PairAnalysisWindow
+from aisynphys.ui.pair_analysis.pair_analysis_opto import OptoPairAnalysisWindow
 
 if __name__ == '__main__':
     app = pg.mkQApp()
@@ -25,7 +26,8 @@ if __name__ == '__main__':
     # timestamps = [r.acq_timestamp for r in db.query(db.Experiment.acq_timestamp).all()]
     timestamps = []
     
-    mw = PairAnalysisWindow(default_session, notes_session)
+    #mw = PairAnalysisWindow(default_session, notes_session)
+    mw = OptoPairAnalysisWindow(default_session, notes_session)
     if args.timestamps is not None:
         timestamps = args.timestamps
     elif args.expt_id is not None:
