@@ -428,23 +428,50 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         window = [latency - 0.0002, latency+0.0002]
         ev = self.deconvolved_events[i]
 
-        if i == len(self.deconvolved_events)-1:
-            data = self.deconvolved.time_slice(ev['time']-0.0001, None)
+        ##### Snip out the section of the deconvolved trace containing the event, reconvolve it and fit. - currently not working too well
+        # if i == len(self.deconvolved_events)-1:
+        #     data = self.deconvolved.time_slice(ev['time']-0.0001, None)
+        # else:
+        #     data = self.deconvolved.time_slice(ev['time']-0.0001, self.deconvolved_events[i+1]['time'])
+
+        # n = int(0.05/data.dt)
+        # d = np.concatenate([np.zeros(100), data.data, np.zeros(n)])
+        # tv = np.concatenate([np.arange(data.t0-data.dt*100, data.t0-data.dt/10., data.dt), data.time_values, np.arange(data.time_values[-1]+data.dt, data.time_values[-1]+data.dt*(n+1), data.dt)])
+        # data = TSeries(data=d, time_values=tv)
+        # data = ev_detect.exp_reconvolve(data, self.processing_params['deconvolve tau'])
+        # fit = fit_psp(data, window, self.clamp_mode, sign=0, exp_baseline=False)
+
+        # v = fit.values
+
+        #### Option2 - fit snippet of original data, but feed fitting algorithm good guesses for amp and rise time 
+        ## basically make travis's measurments, then try to fit to get tau
+        ## this seems good so far -- for some data small differences in rise_time/amp create big differences in the fits, but for most the fits are pretty resilient
+        ##                              -> maybe we want to fit with some different rise_time/amp seeds and see how similar the fits are, similar -> probably good, variation -> don't trust
+        if i == len(self.deconvolved_events)-1: ## last event
+            data = self.average_response.time_slice(latency-0.001, latency+0.05)
         else:
-            data = self.deconvolved.time_slice(ev['time']-0.0001, self.deconvolved_events[i+1]['time'])
+            for param in self.event_params.children():
+                if param.event_number == i+1:
+                    next_latency = param['latency']
+                    break
+            data = self.average_response.time_slice(latency-0.001, next_latency)
 
-        n = int(0.05/data.dt)
-        d = np.concatenate([np.zeros(100), data.data, np.zeros(n)])
-        tv = np.concatenate([np.arange(data.t0-data.dt*100, data.t0-data.dt/10., data.dt), data.time_values, np.arange(data.time_values[-1]+data.dt, data.time_values[-1]+data.dt*(n+1), data.dt)])
-        data = TSeries(data=d, time_values=tv)
-        data = ev_detect.exp_reconvolve(data, self.processing_params['deconvolve tau'])
-        fit = fit_psp(data, window, self.clamp_mode, sign=0, exp_baseline=False)
+        pre_bessel = self.processing_params['pre-deconvolve bessel']
+        filtered = filters.bessel_filter(data, pre_bessel, order=4, btype='low', bidir=True)
 
-        v = fit.values
+
+        peak_ind = np.argwhere(max(filtered.data)==filtered.data)[0][0]
+        peak_time = filtered.time_at(peak_ind)
+        rise_time = peak_time-latency
+        amp = filtered.value_at(peak_time) - filtered.value_at(latency)
+        print('rise_time:%f, amp:%f'%(rise_time, amp))
+        fit = fit_psp(filtered, window, self.clamp_mode, sign=0, exp_baseline=False, init_params={'rise_time':rise_time, 'amp':amp})
+
 
         ## plot fit
-        y=Psp.psp_func(data.time_values,v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
-        self.plot_grid[(0,0)].plot(data.time_values, y, pen=event_param['display_color'])
+        v = fit.values
+        y=Psp.psp_func(self.average_response.time_values,v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
+        self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
 
         ## display fit params
         self.update_fit_param_display(event_param, fit)
