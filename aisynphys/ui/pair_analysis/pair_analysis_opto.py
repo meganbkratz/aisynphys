@@ -413,6 +413,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             {'name': 'Fit parameter', 'type': 'str', 'readonly': True, 'value': 'Amplitude, Latency, Rise time, Decay tau, NRMSE'},
             {'name': 'Fit value', 'type': 'str', 'readonly': True},
             {'name': 'Fit Pass', 'type': 'bool'},
+            {'name': 'Warning', 'type':'str', 'readonly':True, 'value':'', 'visible':False},
             {'name': 'Fit event', 'type':'action'}
             ])
         self.event_params.addChild(param)
@@ -445,7 +446,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         #### Option2 - fit snippet of original data, but feed fitting algorithm good guesses for amp and rise time 
         ## basically make travis's measurments, then try to fit to get tau
-        ## this seems good so far -- for some data small differences in rise_time/amp create big differences in the fits, but for most the fits are pretty resilient
+        ## this seems good so far -- for some data small differences in latency window create big differences in the fits (it turns out this is resolved by making the search spacing for the fit finer), but for most the fits are pretty resilient
         ##                              -> maybe we want to fit with some different rise_time/amp seeds and see how similar the fits are, similar -> probably good, variation -> don't trust
         if i == len(self.deconvolved_events)-1: ## last event
             data = self.average_response.time_slice(latency-0.001, latency+0.05)
@@ -459,22 +460,37 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         pre_bessel = self.processing_params['pre-deconvolve bessel']
         filtered = filters.bessel_filter(data, pre_bessel, order=4, btype='low', bidir=True)
 
+        #print("-------------")
+        #print("latency:", latency)
+        fits = {}
+        #for x in [-0.00009, 0, 0.000090]:
+        for x in [0]: ### I think this issue was resolved by adding the fine fit parameters to fit_psp()
+            peak_ind = np.argwhere(max(filtered.data)==filtered.data)[0][0]
+            peak_time = filtered.time_at(peak_ind)
+            rise_time = peak_time-(latency+x)
+            amp = filtered.value_at(peak_time) - filtered.value_at(latency+x)
+            fit = fit_psp(filtered, (window[0]+x, window[1]+x), self.clamp_mode, sign=0, exp_baseline=False, init_params={'rise_time':rise_time, 'amp':amp}, fine_search_spacing=filtered.dt, fine_search_window_width=100e-6)
+            #fit=fit_psp(filtered, (window[0]+x, window[1]+x), self.clamp_mode, sign=0, exp_baseline=False)
+            #print('init_rise_time:%f, init_amp:%f, tau:%f, x:%f, rise:%s, amp:%s'%(rise_time, amp, fit.values['decay_tau'], fit.values['xoffset'], fit.values['rise_time'], fit.values['amp']))
+            fits[x] = fit
 
-        peak_ind = np.argwhere(max(filtered.data)==filtered.data)[0][0]
-        peak_time = filtered.time_at(peak_ind)
-        rise_time = peak_time-latency
-        amp = filtered.value_at(peak_time) - filtered.value_at(latency)
-        print('rise_time:%f, amp:%f'%(rise_time, amp))
-        fit = fit_psp(filtered, window, self.clamp_mode, sign=0, exp_baseline=False, init_params={'rise_time':rise_time, 'amp':amp})
-
+        ## check to see how different decay_tau is, flag fit as bad if too high -- I think this was resolved
+        # taus = [f.values['decay_tau'] for f in fits.values()]
+        # print('tau stdev:', np.std(taus))
+        # if np.std(taus) > 0.001: ## don't really know yet what value this should be
+        #     bad_fit=True
+        # else:
+        #     bad_fit=False
 
         ## plot fit
-        v = fit.values
+        v = fits[0].values
         y=Psp.psp_func(self.average_response.time_values,v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
         self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
 
         ## display fit params
         self.update_fit_param_display(event_param, fit)
+        # self.set_bad_fit(event_param, bad_fit, taus)
+
 
     def update_fit_param_display(self, param, fit):
         names = ['amp', 'xoffset', 'rise_time', 'decay_tau', 'nrmse']
@@ -497,11 +513,20 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         output = ", ".join(format_list)
 
         param.child('Fit value').setValue(output)
-        
 
-
-
-
+    # def set_bad_fit(self, param, bad_fit, taus):
+    #     if bad_fit:
+    #         param.child('Fit Pass').setValue(False)
+    #         for item in param.child('Fit Pass').items.keys():
+    #             item.setDisabled(True)
+    #         param.child('Warning').setValue('Fit was not robust. Different decay taus found:'+str([pg.siFormat(t, suffix='s') for t in taus]))
+    #         param.child('Warning').show()
+    #     else:
+    #         for item in param.child('Fit Pass').items.keys():
+    #             if item.isDisabled():
+    #                 item.setDisabled(False)
+    #         param.child('Warning').setValue('')
+    #         param.child('Warning').hide()
 
     def update_events(self, events):
         for ch in self.event_params.children():
