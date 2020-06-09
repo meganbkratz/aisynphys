@@ -185,8 +185,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
     #         plot.setLabel('bottom', text='Time from stimulation', units='s')
     #         plot.addItem(self.latency_superline.new_line(self.default_latency))
 
-    def create_new_analyzers(self, catagories):
-        for i, key in enumerate(catagories):
+    def create_new_analyzers(self, categories):
+        for i, key in enumerate(categories):
             self.analyzers[key] = ResponseAnalyzer(host=self, key=key)
             self.analyzerTabWidget.addTab(self.analyzers[key], str(key))
 
