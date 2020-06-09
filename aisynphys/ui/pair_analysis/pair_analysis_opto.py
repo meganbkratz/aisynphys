@@ -405,26 +405,26 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             param.sigValueChanged.connect(self.process_data)
 
     def add_event_param(self, name, latency):
+        visible=int(name[-1])==0
         color = pg.intColor(len(self.event_params.children())+1)
         param = pg.parametertree.Parameter.create(name=name, type='group', children=[
-            #{'name':'latency', 'type':'float', 'value':latency, 'suffix':'s', 'siPrefix':True},
-            LatencyParam(name='latency', value=latency, color=color),
+            LatencyParam(name='user_latency', value=latency, color=color),
             {'name': 'display_color', 'type':'color', 'value':color, 'readOnly':True},
-            {'name': 'Fit parameter', 'type': 'str', 'readonly': True, 'value': 'Amplitude, Latency, Rise time, Decay tau, NRMSE'},
-            {'name': 'Fit value', 'type': 'str', 'readonly': True},
-            {'name': 'Fit Pass', 'type': 'bool'},
+            {'name': 'Fit parameter', 'type': 'str', 'readonly': True, 'value': 'Amplitude, Latency, Rise time, Decay tau, NRMSE', 'visible':visible},
+            {'name': 'Fit value', 'type': 'str', 'readonly': True, 'visible':visible},
+            {'name': 'Fit Pass', 'type': 'bool', 'visible':visible},
             {'name': 'Warning', 'type':'str', 'readonly':True, 'value':'', 'visible':False},
-            {'name': 'Fit event', 'type':'action'}
+            {'name': 'Fit event', 'type':'action', 'visible':visible}
             ])
         self.event_params.addChild(param)
         param.child('Fit event').sigActivated.connect(self.fit_event)
-        self.plot_grid[(0,0)].addItem(param.child('latency').line)
+        self.plot_grid[(0,0)].addItem(param.child('user_latency').line)
         return param
 
     def fit_event(self, btn_param):
         event_param = btn_param.parent()
         i = event_param.event_number
-        latency = event_param['latency']
+        latency = event_param['user_latency']
 
         window = [latency - 0.0002, latency+0.0002]
         ev = self.deconvolved_events[i]
@@ -453,7 +453,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         else:
             for param in self.event_params.children():
                 if param.event_number == i+1:
-                    next_latency = param['latency']
+                    next_latency = param['user_latency']
                     break
             data = self.average_response.time_slice(latency-0.001, next_latency)
 
@@ -530,7 +530,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
     def update_events(self, events):
         for ch in self.event_params.children():
-            self.plot_grid[(0,0)].removeItem(ch.child('latency').line)
+            self.plot_grid[(0,0)].removeItem(ch.child('user_latency').line)
         self.event_params.clearChildren()
 
         times = events['time']
