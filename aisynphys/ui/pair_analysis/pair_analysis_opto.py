@@ -9,7 +9,7 @@ import neuroanalysis.filter as filters
 import neuroanalysis.event_detection as ev_detect
 from neuroanalysis.data.dataset import TSeries
 
-from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine
+from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine, comment_hashtag
 from aisynphys.ui.experiment_selector import ExperimentSelector
 from aisynphys.ui.experiment_browser import ExperimentBrowser
 from aisynphys.avg_response_fit import get_pair_avg_fits, response_query, sort_responses_opto
@@ -42,7 +42,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         self.expt_selector = ExperimentSelector(default_session, notes_session, hashtags=[])
         self.expt_browser = ExperimentBrowser()
-        self.ctrl_panel = ControlPanel()
+        #self.ctrl_panel = ControlPanel()
         self.plot_grid = PlotGrid()
         #self.plot_grid = FitPlotter()
         self.latency_superline = SuperLine()
@@ -51,18 +51,37 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         self.ptree = pg.parametertree.ParameterTree(showHeader=False)
         self.pair_param = pg.parametertree.Parameter.create(name='Current Pair', type='str', readonly=True)
+        self.pair_param.addChild({'name':'Synapse call', 'type':'list', 'values':{'Excitatory': 'ex', 'Inhibitory': 'in', 'None': None}})
+        self.pair_param.addChild({'name':'Gap junction call', 'type':'bool'})
         self.ptree.addParameters(self.pair_param)
-        self.ptree.addParameters(self.ctrl_panel.user_params, showTop=False)
+        #self.category_param = pg.parametertree.Parameter.create(name='Categories', type='group')
+        #self.ptree.addParameters(self.category_param)
+        #self.comment_param = pg.parametertree.Parameter.create(name='Comments', type='group', children=[
+        #    {'name': 'Hashtag', 'type': 'list', 'values': comment_hashtag, 'value': ''},
+        #    {'name': '', 'type': 'text'}
+        #])
+        #self.ptree.addParameters(self.comment_param)
+        #self.comment_param.child('Hashtag').sigValueChanged.connect(self.add_text_to_comments)
+        
+        #self.ptree.addParameters(self.ctrl_panel.user_params, showTop=False)
 
-        self.fit_btn = pg.QtGui.QPushButton('Fit Responses')
-        self.fit_btn.setEnabled(False)
+        #self.fit_btn = pg.QtGui.QPushButton('Fit Responses')
+        #self.fit_btn.setEnabled(False)
         self.fit_ptree = pg.parametertree.ParameterTree(showHeader=False)
-        self.fit_ptree.addParameters(self.ctrl_panel.output_params, showTop=False)
+        self.category_param = pg.parametertree.Parameter.create(name='Categories', type='group')
+        self.fit_ptree.addParameters(self.category_param)
+        self.comment_param = pg.parametertree.Parameter.create(name='Comments', type='group', children=[
+            {'name': 'Hashtag', 'type': 'list', 'values': comment_hashtag, 'value': ''},
+            {'name': '', 'type': 'text'}
+        ])
+        self.fit_ptree.addParameters(self.comment_param)
+        self.comment_param.child('Hashtag').sigValueChanged.connect(self.add_text_to_comments)
+        #self.fit_ptree.addParameters(self.ctrl_panel.output_params, showTop=False)
 
         self.save_btn = pg.FeedbackButton('Save Analysis')
 
         v_splitter = pg.QtGui.QSplitter(pg.QtCore.Qt.Vertical)
-        for widget in [self.expt_browser, self.ptree, self.fit_btn, self.fit_ptree, self.save_btn]:
+        for widget in [self.expt_browser, self.ptree, self.fit_ptree, self.save_btn]:
             v_splitter.addWidget(widget)
 
         self.selectTabWidget.addTab(v_splitter, "Pair Select")
@@ -78,9 +97,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         self.expt_selector.sigNewExperimentsRetrieved.connect(self.set_expts)
         self.expt_browser.itemSelectionChanged.connect(self.new_pair_selected)
-        self.latency_superline.sigPositionChanged.connect(self.ctrl_panel.set_latency)
-        self.ctrl_panel.synapse.sigValueChanged.connect(self.synapse_call_changed)
-        self.fit_btn.clicked.connect(self.fit_responses)
+        #self.latency_superline.sigPositionChanged.connect(self.ctrl_panel.set_latency)
+        #self.ctrl_panel.synapse.sigValueChanged.connect(self.synapse_call_changed)
+        #self.fit_btn.clicked.connect(self.fit_responses)
         self.save_btn.clicked.connect(self.save_to_db)
 
     def set_expts(self, expts):
@@ -99,10 +118,10 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         #self.latency_superline.clear_lines()
         #self.plot_grid.clear()
         self.analyzerTabWidget.clear()
-        self.ctrl_panel.fit_params.clearChildren()
-        self.ctrl_panel.output_params.child('Comments', 'Hashtag').setValue('')
-        self.ctrl_panel.output_params.child('Comments', '').setValue('')
-        self.ctrl_panel.output_params.child('Warnings').setValue('')
+        #self.ctrl_panel.fit_params.clearChildren()
+        #self.ctrl_panel.output_params.child('Comments', 'Hashtag').setValue('')
+        #self.ctrl_panel.output_params.child('Comments', '').setValue('')
+        #self.ctrl_panel.output_params.child('Warnings').setValue('')
 
     def new_pair_selected(self):
         with pg.BusyCursor():
@@ -138,6 +157,12 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         else:
             self.fit_btn.setEnabled(True)
 
+    def add_text_to_comments(self):
+        text = self.comment_param['Hashtag']
+        comments = self.comment_param['']
+        update_comments = comments + text + '\n'
+        self.comment_param.child('').setValue(update_comments)
+
 
     def load_pair(self, pair):
         """Pull responses from db, sort into groups and plot."""
@@ -152,8 +177,11 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                 synapse_type = pair.synapse.synapse_type
             else:
                 synapse_type = None
-            pair_params = {'Synapse call': synapse_type, 'Gap junction call': pair.has_electrical}
-            self.ctrl_panel.update_user_params(**pair_params)
+
+            self.pair_param.child('Synapse call').setValue(synapse_type)
+            self.pair_param.child('Gap junction call').setValue(pair.has_electrical)
+            #pair_params = {'Synapse call': synapse_type, 'Gap junction call': pair.has_electrical}
+            #self.ctrl_panel.update_user_params(**pair_params)
             #self.ctrl_panel.update_fit_params(self.fit_params['fit'], fit_pass=True)
             
 
@@ -166,7 +194,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                     self.sorted_responses[k]=v
 
             ## create plots and parameter items for each catagory in sorted responses
-            self.ctrl_panel.create_new_fit_params([str(k) for k in self.sorted_responses.keys()])
+            #self.ctrl_panel.create_new_fit_params([str(k) for k in self.sorted_responses.keys()])
             #self.create_new_plots(self.sorted_responses.keys())
             self.create_new_analyzers(self.sorted_responses.keys())
             self.fit_params = {key:{'initial':{}, 'fit':{}} for key in self.sorted_responses.keys()}
@@ -189,6 +217,28 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         for i, key in enumerate(categories):
             self.analyzers[key] = ResponseAnalyzer(host=self, key=key)
             self.analyzerTabWidget.addTab(self.analyzers[key], str(key))
+            self.category_param.addChild({'name':str(key), 'type':'group', 'children':[
+                {'name':'status', 'type':'str', 'value': 'not analyzed', 'readOnly':True},
+                {'name':'number_of_events', 'type':'str', 'readOnly':True, 'visible':False},
+                {'name':'user_passed_fit', 'type':'str', 'readOnly':True, 'visible':False}
+                ]})
+            self.analyzers[key].sigNewAnalysisAvailable.connect(self.got_new_analysis)
+
+    def got_new_analysis(self, result):
+           # res = {'category_name':self.key,
+           #     'fit': self.current_fit,
+           #     'fit_pass':self.event_params.child('event_0')['Fit Pass'],
+           #     'n_events':len(self.event_params.children()),
+           #     'event_times':[p['user_latency'] for p in self.event_params.children()]}
+        param = self.category_param.child(str(result['category_name']))
+        param.child('status').setValue('done')
+        param.child('number_of_events').setValue(str(result['n_events']))
+        param.child('number_of_events').show()
+        param.child('user_passed_fit').setValue(str(result['fit_pass']))
+        param.child('user_passed_fit').show()
+
+        param.fit = result['fit']
+        param.event_times = result['event_times']
 
     def plot_responses(self):
         #qc_color = {'qc_pass': (255, 255, 255, 100), 'qc_fail': (255, 0, 0, 100)}
@@ -213,83 +263,83 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             # self.plot_grid[(i,0)].autoRange()
             # self.plot_grid[(i,0)].setXRange(-5e-3, 10e-3)
 
-    def fit_responses(self):
-        latency = self.ctrl_panel.user_params['User Latency']
-        latency_window = [latency-500e-6, latency+500e-6]
+    # def fit_responses(self):
+    #     latency = self.ctrl_panel.user_params['User Latency']
+    #     latency_window = [latency-500e-6, latency+500e-6]
 
-        fit_color = {True: 'g', False: 'r'}
+    #     fit_color = {True: 'g', False: 'r'}
 
-        with pg.ProgressDialog("curve fitting..", maximum=len(self.sorted_responses)) as dlg:
-            for i, key in enumerate(self.sorted_responses.keys()): 
-                clamp_mode = key[0]
-                prs = self.sorted_responses[key]['qc_pass']
-                if len(prs) == 0:
-                    dlg += 1
-                    continue
+    #     with pg.ProgressDialog("curve fitting..", maximum=len(self.sorted_responses)) as dlg:
+    #         for i, key in enumerate(self.sorted_responses.keys()): 
+    #             clamp_mode = key[0]
+    #             prs = self.sorted_responses[key]['qc_pass']
+    #             if len(prs) == 0:
+    #                 dlg += 1
+    #                 continue
                     
-                tsl = PulseResponseList(prs).post_tseries(align='pulse', bsub=True)
-                average = tsl.mean()
-                #fit = fit_psp(average, latency_window, clamp_mode, baseline_like_psp=True)
-                fits = self.fit_psps_opto(average, latency_window, clamp_mode, baseline_like_psp=True)
-                d = np.zeros(average.data.shape, average.data.dtype)
-                for j, fit in fits.items():
-                    v = fit.values
-                    fit_data = Psp.psp_func(average.time_values, v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
-                    self.plot_grid[(i,0)].plot(average.time_values, fit_data, pen=pg.intColor(j, minHue=100))
-                    d += fit_data
+    #             tsl = PulseResponseList(prs).post_tseries(align='pulse', bsub=True)
+    #             average = tsl.mean()
+    #             #fit = fit_psp(average, latency_window, clamp_mode, baseline_like_psp=True)
+    #             fits = self.fit_psps_opto(average, latency_window, clamp_mode, baseline_like_psp=True)
+    #             d = np.zeros(average.data.shape, average.data.dtype)
+    #             for j, fit in fits.items():
+    #                 v = fit.values
+    #                 fit_data = Psp.psp_func(average.time_values, v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
+    #                 self.plot_grid[(i,0)].plot(average.time_values, fit_data, pen=pg.intColor(j, minHue=100))
+    #                 d += fit_data
 
-                self.plot_grid[(i,0)].plot(average.time_values, d, pen='r')
+    #             self.plot_grid[(i,0)].plot(average.time_values, d, pen='r')
 
 
-                #fit_ts = average.copy(data=fit.best_fit)
+    #             #fit_ts = average.copy(data=fit.best_fit)
                     
-                #self.fit_params[key]['initial']['xoffset'] = latency
-                #self.fit_params[key]['fit']['nrmse'] = fit.nrmse()
-                #self.fit_params[key]['fit'].update(fit.best_values)
+    #             #self.fit_params[key]['initial']['xoffset'] = latency
+    #             #self.fit_params[key]['fit']['nrmse'] = fit.nrmse()
+    #             #self.fit_params[key]['fit'].update(fit.best_values)
 
-                #fit_pass = fit.nrmse() < self.nrmse_threshold
-                #self.ctrl_panel.output_params.child('Fit parameters', str(key), 'Fit Pass').setValue(fit_pass)
-                #self.ctrl_panel.update_fit_param(key, self.fit_params[key]['fit'])
+    #             #fit_pass = fit.nrmse() < self.nrmse_threshold
+    #             #self.ctrl_panel.output_params.child('Fit parameters', str(key), 'Fit Pass').setValue(fit_pass)
+    #             #self.ctrl_panel.update_fit_param(key, self.fit_params[key]['fit'])
 
-                #self.plot_grid[(i,0)].plot(fit_ts.time_values, fit_ts.data, pen={'color':fit_color[fit_pass], 'width': 3})
+    #             #self.plot_grid[(i,0)].plot(fit_ts.time_values, fit_ts.data, pen={'color':fit_color[fit_pass], 'width': 3})
                 
-                dlg += 1
-                if dlg.wasCanceled():
-                    raise Exception("User canceled fit")
+    #             dlg += 1
+    #             if dlg.wasCanceled():
+    #                 raise Exception("User canceled fit")
 
-        self.generate_warnings()
-
-    def fit_psps_opto(self, average, latency_window, clamp_mode, baseline_like_psp=True):
-
-        tau=20e-3 ## for epsps, 50ms for ipsps
-
-        filtered = filters.bessel_filter(average, 4000, order=2, btype='low', bidir=True)
-        exp_dec = ev_detect.exp_deconvolve(filtered, tau)
-
-        threshold = 0.3*max(exp_dec.data)
-
-        ## index, length, sum, peak, peak_index, time, duration, area, peak_time
-        events = ev_detect.threshold_events(exp_dec, threshold)
-        sign=1
-        fits={}
-
-        for i, ev in enumerate(events):
-            window = [ev['time']-0.002, ev['time']+0.002]
-
-            if i == len(events)-1:
-                data = exp_dec.time_slice(ev['time']-0.0001, None)
-            else:
-                data = exp_dec.time_slice(ev['time']-0.0001, events[i+1]['time'])
-
-            d = np.concatenate([np.zeros(100), data.data, np.zeros(300)])
-            tv = np.concatenate([np.arange(data.t0-data.dt*100, data.t0-data.dt/10., data.dt), data.time_values, np.arange(data.time_values[-1]+data.dt, data.time_values[-1]+data.dt*301, data.dt)])
-            data = TSeries(data=d, time_values=tv)
-            data = ev_detect.exp_reconvolve(data, tau)
-            fits[i] = fit_psp(data, window, clamp_mode, sign, exp_baseline=False)
-
-        return fits
+    #     self.generate_warnings()
 
 
+
+    # def fit_psps_opto(self, average, latency_window, clamp_mode, baseline_like_psp=True):
+
+    #     tau=20e-3 ## for epsps, 50ms for ipsps
+
+    #     filtered = filters.bessel_filter(average, 4000, order=2, btype='low', bidir=True)
+    #     exp_dec = ev_detect.exp_deconvolve(filtered, tau)
+
+    #     threshold = 0.3*max(exp_dec.data)
+
+    #     ## index, length, sum, peak, peak_index, time, duration, area, peak_time
+    #     events = ev_detect.threshold_events(exp_dec, threshold)
+    #     sign=1
+    #     fits={}
+
+    #     for i, ev in enumerate(events):
+    #         window = [ev['time']-0.002, ev['time']+0.002]
+
+    #         if i == len(events)-1:
+    #             data = exp_dec.time_slice(ev['time']-0.0001, None)
+    #         else:
+    #             data = exp_dec.time_slice(ev['time']-0.0001, events[i+1]['time'])
+
+    #         d = np.concatenate([np.zeros(100), data.data, np.zeros(300)])
+    #         tv = np.concatenate([np.arange(data.t0-data.dt*100, data.t0-data.dt/10., data.dt), data.time_values, np.arange(data.time_values[-1]+data.dt, data.time_values[-1]+data.dt*301, data.dt)])
+    #         data = TSeries(data=d, time_values=tv)
+    #         data = ev_detect.exp_reconvolve(data, tau)
+    #         fits[i] = fit_psp(data, window, clamp_mode, sign, exp_baseline=False)
+
+    #     return fits
 
     def load_saved_fit(self, record):
         raise Exception('implement me!')
@@ -350,6 +400,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
 class ResponseAnalyzer(pg.QtGui.QWidget):
 
+    sigNewAnalysisAvailable = pg.Qt.QtCore.Signal(object)
+
     def __init__(self, host=None, key=None):
         pg.QtGui.QWidget.__init__(self)
         layout = pg.QtGui.QHBoxLayout()
@@ -371,6 +423,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         self.plot_grid=PlotGrid()
         #self.fit_btn = pg.QtGui.QPushButton("Fit responses")
         self.add_btn = pg.QtGui.QPushButton("Add analysis")
+        self.add_btn.clicked.connect(self.add_analysis_btn_clicked)
 
         v_widget = pg.QtGui.QWidget()
         v_layout = pg.QtGui.QVBoxLayout()
@@ -483,6 +536,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         #     bad_fit=False
 
         ## plot fit
+        self.current_fit = fits[0]
         v = fits[0].values
         y=Psp.psp_func(self.average_response.time_values,v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
         self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
@@ -611,6 +665,16 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         
         # plot.addItem(pg.VTickGroup(event_times, (0.7, 1)))
+
+    def add_analysis_btn_clicked(self):
+        res = {'category_name':self.key,
+               'fit': self.current_fit,
+               'fit_pass':self.event_params.child('event_0')['Fit Pass'],
+               'n_events':len(self.event_params.children()),
+               'event_times':[p['user_latency'] for p in self.event_params.children()]}
+        self.sigNewAnalysisAvailable.emit(res)
+
+
 
 
 
