@@ -111,6 +111,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             else:
                 self.expt_browser.populate(experiments=expts)
 
+        if len(expts) > 0:
+            self.selectTabWidget.setCurrentIndex(1)
+
     def reset(self):
         self.pulse_responses = None
         self.sorted_responses = None
