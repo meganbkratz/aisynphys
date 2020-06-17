@@ -448,9 +448,9 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         self.processing_params = pg.parametertree.Parameter.create(name='Processing', type='group', children=[
             {'name':'pre-deconvolve bessel', 'type':'float', 'value':6e3, 'suffix':'Hz', 'siPrefix':True, 'dec':True},
-            {'name':'deconvolve tau', 'type':'float', 'value':15e-3, 'suffix':'s', 'siPrefix':True, 'dec':True},
+            {'name':'deconvolve tau', 'type':'float', 'value':15e-3, 'suffix':'s', 'siPrefix':True, 'step':1e-3},
             {'name':'post-deconvolve bessel', 'type':'float', 'value':1e3, 'suffix':'Hz', 'siPrefix':True, 'dec':True},
-            {'name':'event_threshold_fraction', 'type':'float', 'value':0.3, 'bounds':(0,1)}
+            {'name':'event_threshold_fraction', 'type':'float', 'value':0.3, 'step':0.1}
             ])
         self.param_tree.addParameters(self.processing_params)
         self.event_params = pg.parametertree.Parameter.create(name="Events", type='group')
