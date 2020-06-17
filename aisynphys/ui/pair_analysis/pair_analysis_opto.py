@@ -121,6 +121,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         #self.latency_superline.clear_lines()
         #self.plot_grid.clear()
         self.analyzerTabWidget.clear()
+        self.category_param.clearChildren()
         #self.ctrl_panel.fit_params.clearChildren()
         #self.ctrl_panel.output_params.child('Comments', 'Hashtag').setValue('')
         #self.ctrl_panel.output_params.child('Comments', '').setValue('')
