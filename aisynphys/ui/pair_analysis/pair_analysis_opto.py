@@ -351,6 +351,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.warnings = None
 
     def save_to_db(self):
+        raise Exception('saving to db is not implemented yet.')
+
         fit_pass = {}
         for key in self.sorted_responses.keys():
             fit_pass[key] = self.ctrl_panel.output_params['Fit parameters', str(key), 'Fit Pass']
