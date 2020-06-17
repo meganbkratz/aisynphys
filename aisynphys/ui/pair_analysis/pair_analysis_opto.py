@@ -590,14 +590,13 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             self.plot_grid[(0,0)].removeItem(ch.child('user_latency').line)
         self.event_params.clearChildren()
 
-        times = events['time']
-        zeroth = np.argwhere(times == times[times > 0].min())
+        if len(events) > 0:
+            times = events['time']
+            zeroth = np.argwhere(times == times[times > 0].min())
 
-        for i, ev in enumerate(events):
-            param = self.add_event_param('event_%i'%(i-zeroth), ev['time'])
-            param.event_number=i
-
-
+            for i, ev in enumerate(events):
+                param = self.add_event_param('event_%i'%(i-zeroth), ev['time'])
+                param.event_number=i
 
     def plot_responses(self, responses):
         self.responses = responses
