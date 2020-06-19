@@ -205,17 +205,6 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
             self.plot_responses()
 
-    # def create_new_plots(self, categories):
-    #     self.plot_grid.set_shape(len(categories), 1)
-
-    #     unit_map={'vc':'A', 'ic':'V'}
-
-    #     for i, key in enumerate(categories):
-    #         plot = self.plot_grid[(i,0)]
-    #         plot.setTitle(str(key))
-    #         plot.setLabel('left', text="%dmV holding" % key[1], units=unit_map[key[0]])
-    #         plot.setLabel('bottom', text='Time from stimulation', units='s')
-    #         plot.addItem(self.latency_superline.new_line(self.default_latency))
 
     def create_new_analyzers(self, categories):
         for i, key in enumerate(categories):
@@ -244,106 +233,10 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         param.fit = result['fit']
         param.event_times = result['event_times']
 
-    def plot_responses(self):
-        #qc_color = {'qc_pass': (255, 255, 255, 100), 'qc_fail': (255, 0, 0, 100)}
-        
+    def plot_responses(self):        
         for i, key in enumerate(self.sorted_responses.keys()):
             self.analyzers[key].plot_responses(self.sorted_responses[key])
-            # for qc, prs in self.sorted_responses[key].items():
-            #     if len(prs) == 0:
-            #         continue
-            #     prl = PulseResponseList(prs)
-            #     post_ts = prl.post_tseries(align='pulse', bsub=True)
-                
-            #     for trace in post_ts:
-            #         item = self.plot_grid[(i,0)].plot(trace.time_values, trace.data, pen=qc_color[qc])
-            #         if qc == 'qc_fail':
-            #             item.setZValue(-10)
-            #         #self.items.append(item)
-            #     if qc == 'qc_pass':
-            #         grand_trace = post_ts.mean()
-            #         item = self.plot_grid[(i,0)].plot(grand_trace.time_values, grand_trace.data, pen={'color': 'b', 'width': 2})
-            #         #self.items.append(item)
-            # self.plot_grid[(i,0)].autoRange()
-            # self.plot_grid[(i,0)].setXRange(-5e-3, 10e-3)
 
-    # def fit_responses(self):
-    #     latency = self.ctrl_panel.user_params['User Latency']
-    #     latency_window = [latency-500e-6, latency+500e-6]
-
-    #     fit_color = {True: 'g', False: 'r'}
-
-    #     with pg.ProgressDialog("curve fitting..", maximum=len(self.sorted_responses)) as dlg:
-    #         for i, key in enumerate(self.sorted_responses.keys()): 
-    #             clamp_mode = key[0]
-    #             prs = self.sorted_responses[key]['qc_pass']
-    #             if len(prs) == 0:
-    #                 dlg += 1
-    #                 continue
-                    
-    #             tsl = PulseResponseList(prs).post_tseries(align='pulse', bsub=True)
-    #             average = tsl.mean()
-    #             #fit = fit_psp(average, latency_window, clamp_mode, baseline_like_psp=True)
-    #             fits = self.fit_psps_opto(average, latency_window, clamp_mode, baseline_like_psp=True)
-    #             d = np.zeros(average.data.shape, average.data.dtype)
-    #             for j, fit in fits.items():
-    #                 v = fit.values
-    #                 fit_data = Psp.psp_func(average.time_values, v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
-    #                 self.plot_grid[(i,0)].plot(average.time_values, fit_data, pen=pg.intColor(j, minHue=100))
-    #                 d += fit_data
-
-    #             self.plot_grid[(i,0)].plot(average.time_values, d, pen='r')
-
-
-    #             #fit_ts = average.copy(data=fit.best_fit)
-                    
-    #             #self.fit_params[key]['initial']['xoffset'] = latency
-    #             #self.fit_params[key]['fit']['nrmse'] = fit.nrmse()
-    #             #self.fit_params[key]['fit'].update(fit.best_values)
-
-    #             #fit_pass = fit.nrmse() < self.nrmse_threshold
-    #             #self.ctrl_panel.output_params.child('Fit parameters', str(key), 'Fit Pass').setValue(fit_pass)
-    #             #self.ctrl_panel.update_fit_param(key, self.fit_params[key]['fit'])
-
-    #             #self.plot_grid[(i,0)].plot(fit_ts.time_values, fit_ts.data, pen={'color':fit_color[fit_pass], 'width': 3})
-                
-    #             dlg += 1
-    #             if dlg.wasCanceled():
-    #                 raise Exception("User canceled fit")
-
-    #     self.generate_warnings()
-
-
-
-    # def fit_psps_opto(self, average, latency_window, clamp_mode, baseline_like_psp=True):
-
-    #     tau=20e-3 ## for epsps, 50ms for ipsps
-
-    #     filtered = filters.bessel_filter(average, 4000, order=2, btype='low', bidir=True)
-    #     exp_dec = ev_detect.exp_deconvolve(filtered, tau)
-
-    #     threshold = 0.3*max(exp_dec.data)
-
-    #     ## index, length, sum, peak, peak_index, time, duration, area, peak_time
-    #     events = ev_detect.threshold_events(exp_dec, threshold)
-    #     sign=1
-    #     fits={}
-
-    #     for i, ev in enumerate(events):
-    #         window = [ev['time']-0.002, ev['time']+0.002]
-
-    #         if i == len(events)-1:
-    #             data = exp_dec.time_slice(ev['time']-0.0001, None)
-    #         else:
-    #             data = exp_dec.time_slice(ev['time']-0.0001, events[i+1]['time'])
-
-    #         d = np.concatenate([np.zeros(100), data.data, np.zeros(300)])
-    #         tv = np.concatenate([np.arange(data.t0-data.dt*100, data.t0-data.dt/10., data.dt), data.time_values, np.arange(data.time_values[-1]+data.dt, data.time_values[-1]+data.dt*301, data.dt)])
-    #         data = TSeries(data=d, time_values=tv)
-    #         data = ev_detect.exp_reconvolve(data, tau)
-    #         fits[i] = fit_psp(data, window, clamp_mode, sign, exp_baseline=False)
-
-    #     return fits
 
     def load_saved_fit(self, record):
         raise Exception('implement me!')
