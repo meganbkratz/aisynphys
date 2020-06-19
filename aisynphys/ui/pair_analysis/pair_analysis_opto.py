@@ -1,4 +1,4 @@
-import datetime
+import datetime, itertools
 import pyqtgraph as pg
 import numpy as np
 from collections import OrderedDict
@@ -12,7 +12,7 @@ from neuroanalysis.data.dataset import TSeries
 from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine, comment_hashtag
 from aisynphys.ui.experiment_selector import ExperimentSelector
 from aisynphys.ui.experiment_browser import ExperimentBrowser
-from aisynphys.avg_response_fit import get_pair_avg_fits, response_query, sort_responses_opto
+from aisynphys.avg_response_fit import get_pair_avg_fits, response_query
 
 from aisynphys.database import default_db as db
 from aisynphys.data import data_notes_db as notes_db
@@ -189,7 +189,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             #self.ctrl_panel.update_fit_params(self.fit_params['fit'], fit_pass=True)
             
 
-            sorted_responses = sort_responses_opto(self.pulse_responses)
+            sorted_responses = self.sort_responses(self.pulse_responses)
 
             # filter out categories with no responses
             self.sorted_responses = OrderedDict()
@@ -204,6 +204,40 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.fit_params = {key:{'initial':{}, 'fit':{}} for key in self.sorted_responses.keys()}
 
             self.plot_responses()
+
+    def sort_responses(self, pulse_responses):
+        ex_limits = [-80e-3, -60e-3]
+        in_limits1 = [-60e-3, -45e-3]
+        in_limits2 = [-10e-3, 10e-3] ## some experiments were done with Cs+ and held at 0mv
+        distance_limit = 10e-6
+
+        modes = ['vc', 'ic']
+        holdings = [-70, -55, 0]
+        powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses]))
+
+        keys = itertools.product(modes, holdings, powers)
+        sorted_responses = OrderedDict({k:{'qc_pass':[], 'qc_fail':[]} for k in keys})
+
+        qc = {False: 'qc_fail', True: 'qc_pass'}
+
+        for pr in pulse_responses:
+            clamp_mode = pr.recording.patch_clamp_recording.clamp_mode
+            holding = pr.recording.patch_clamp_recording.baseline_potential
+            power = pr.stim_pulse.meta.get('pockel_cmd')
+
+            if in_limits1[0] <= holding < in_limits1[1]:
+                qc_pass = qc[pr.in_qc_pass and pr.stim_pulse.meta.get('offset_distance', 0) < distance_limit]
+                sorted_responses[(clamp_mode, -55, power)][qc_pass].append(pr)
+
+            elif in_limits2[0] <= holding < in_limits2[1]:
+                qc_pass = qc[pr.in_qc_pass and pr.stim_pulse.meta.get('offset_distance', 0) < distance_limit]
+                sorted_responses[(clamp_mode, 0, power)][qc_pass].append(pr)
+
+            elif ex_limits[0] <= holding < ex_limits[1]:
+                qc_pass = qc[pr.ex_qc_pass and pr.stim_pulse.meta.get('offset_distance', 0) < distance_limit]
+                sorted_responses[(clamp_mode, -70, power)][qc_pass].append(pr)
+
+        return sorted_responses
 
 
     def create_new_analyzers(self, categories):
