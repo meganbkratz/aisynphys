@@ -213,9 +213,19 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         modes = ['vc', 'ic']
         holdings = [-70, -55, 0]
-        powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses]))
 
-        keys = itertools.product(modes, holdings, powers)
+        ### Need to differentiate between laser-stimulated pairs and electrode-electode pairs
+        ## I would like to do this in a more specific way, ie: if the device type == Fidelity. -- this is in the pipeline branch of aisynphys 
+        ## But that needs to wait until devices are in the db. (but also aren't they?)
+        ## Also, we're going to have situations where the same pair has laser responses and 
+        ##   electrode responses when we start getting 2P guided pair patching, and this will fail then
+        if pulse_responses[0].pair.pre_cell.electrode is None:  
+            powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses]))
+            keys = itertools.product(modes, holdings, powers)
+
+        else:
+            keys = itertools.product(modes, holdings)
+
         sorted_responses = OrderedDict({k:{'qc_pass':[], 'qc_fail':[]} for k in keys})
 
         qc = {False: 'qc_fail', True: 'qc_pass'}
