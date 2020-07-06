@@ -406,8 +406,12 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         param = pg.parametertree.Parameter.create(name=name, type='group', children=[
             LatencyParam(name='user_latency', value=latency, color=color),
             {'name': 'display_color', 'type':'color', 'value':color, 'readOnly':True},
-            {'name': 'Fit parameter', 'type': 'str', 'readonly': True, 'value': 'Amplitude, Latency, Rise time, Decay tau, NRMSE', 'visible':visible},
-            {'name': 'Fit value', 'type': 'str', 'readonly': True, 'visible':visible},
+            {'name': 'Fit results', 'type':'group', 'readonly':True, 'visible':visible, 'expanded':True, 'children':[
+                {'name':'amplitude', 'type':'str', 'readonly':True},
+                {'name':'latency', 'type':'str', 'readonly':True},
+                {'name':'rise time', 'type':'str', 'readonly':True},
+                {'name':'decay tau', 'type':'str', 'readonly':True},
+                {'name':'NRMSE', 'type':'str', 'readonly':True}]},
             {'name': 'Fit Pass', 'type': 'bool', 'visible':visible},
             {'name': 'Warning', 'type':'str', 'readonly':True, 'value':'', 'visible':False},
             {'name': 'Fit event', 'type':'action', 'visible':visible}
@@ -486,44 +490,22 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         ## display fit params
         self.update_fit_param_display(event_param, fit)
-        # self.set_bad_fit(event_param, bad_fit, taus)
-
 
     def update_fit_param_display(self, param, fit):
-        names = ['amp', 'xoffset', 'rise_time', 'decay_tau', 'nrmse']
         if self.clamp_mode == 'vc':
-            suffix = ['A', 's', 's', 's', '']
+            param.child('Fit results').child('amplitude').setValue(pg.siFormat(fit.values['amp'], suffix='A'))
         elif self.clamp_mode == 'ic':
-            suffix = ['V', 's', 's', 's', '']
+            param.child('Fit results').child('amplitude').setValue(pg.siFormat(fit.values['amp'], suffix='V'))
 
-        format_list = []
-        for p in zip(names, suffix):
-            if fit.values.get(p[0]) is None:
-                format_list.append('nan')
-            else:
-                value = fit.values[p[0]]
-                if p[0] == 'nrmse':
-                    p_format = ('%0.2f' % value)
-                else:
-                    p_format = pg.siFormat(value, suffix=p[1])
-                format_list.append(p_format)
-        output = ", ".join(format_list)
+        param.child('Fit results').child('latency').setValue(pg.siFormat(fit.values['xoffset'], suffix='s'))
+        param.child('Fit results').child('rise time').setValue(pg.siFormat(fit.values['rise_time'], suffix='s'))
+        param.child('Fit results').child('decay tau').setValue(pg.siFormat(fit.values['decay_tau'], suffix='s'))
 
-        param.child('Fit value').setValue(output)
-
-    # def set_bad_fit(self, param, bad_fit, taus):
-    #     if bad_fit:
-    #         param.child('Fit Pass').setValue(False)
-    #         for item in param.child('Fit Pass').items.keys():
-    #             item.setDisabled(True)
-    #         param.child('Warning').setValue('Fit was not robust. Different decay taus found:'+str([pg.siFormat(t, suffix='s') for t in taus]))
-    #         param.child('Warning').show()
-    #     else:
-    #         for item in param.child('Fit Pass').items.keys():
-    #             if item.isDisabled():
-    #                 item.setDisabled(False)
-    #         param.child('Warning').setValue('')
-    #         param.child('Warning').hide()
+        nrmse = fit.values.get('nrmse')
+        if nrmse is None:
+            param.child('Fit results').child('NRMSE').setValue('nan')
+        else:
+            param.child('Fit results').child('NRMSE').setValue('%0.2f'%nmrse)
 
     def update_events(self, events):
         for ch in self.event_params.children():
