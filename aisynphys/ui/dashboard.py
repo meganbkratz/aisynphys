@@ -633,13 +633,15 @@ class ExperimentMetadata(Experiment):
             search_paths = [self.primary_path, self.archive_path, self.nas_path]
             submitted = False
             connections = None
+            ignore = False
             for path in search_paths:
-                if path is None:
-                    continue
-                yml_file = os.path.join(path, 'pipettes.yml')
-                if os.path.isfile(yml_file):
-                    submitted = True
+                if path is not None and os.path.exists(path):
+                    chosen_path = path
                     break
+            yml_file = os.path.join(chosen_path, 'pipettes.yml')
+            ignore_file = os.path.join(chosen_path, 'ignore.txt')
+            ignore = os.path.exists(ignore_file)
+            submitted = os.path.exists(yml_file)
                     # connections = (0, pass_color)
             #         pips = yaml.load(open(yml_file, 'rb'))
             #         for k,v in pips.items():
@@ -655,10 +657,13 @@ class ExperimentMetadata(Experiment):
             rec['data'] = '-' if self.nwb_file is None else True
             slice_fixed = self.slice_fixed
             if slice_fixed is True:
-                image_20x = self.biocytin_20x_file
-                rec['20x'] = image_20x is not None
-            else:
-                rec['20x'] = '-'
+                biocytin_20x = self.biocytin_20x_file is not None
+                dapi_20x = self.dapi_image_url is not None
+                image_20x = biocytin_20x and dapi_20x
+                if biocytin_20x and not dapi_20x:
+                    rec['20x'] = ('No DAPI', (255, 255, 100))
+                else:
+                    rec['20x'] = image_20x 
 
             if rec['submitted']:
                 if rec['data'] is not True:
@@ -666,7 +671,9 @@ class ExperimentMetadata(Experiment):
                 else:
                     rec['site.mosaic'] = self.mosaic_file is not None
                     has_run, expt_success, all_success, errors = self.db_status
-                    if not has_run:
+                    if ignore:
+                        rec['DB'] = ("Ignore", (255, 255, 255))
+                    elif not has_run:
                         rec['DB'] = ("MISSING", (255, 255, 100))
                     elif not expt_success:
                         rec['DB'] = ("ERROR", fail_color)
@@ -700,7 +707,7 @@ class ExperimentMetadata(Experiment):
                     rec['LIMS'] = in_lims
                     image_63x = self.biocytin_63x_files
 
-                    if in_lims is True and slice_fixed is True and image_20x is not None:
+                    if in_lims is True and slice_fixed is True:
                         cell_specimens = lims.child_specimens(cell_cluster)
                         if len(cell_specimens) != 0:
                             cell_info = lims.cluster_cells(cell_cluster)
@@ -722,13 +729,12 @@ class ExperimentMetadata(Experiment):
                             rec['cell map'] = False
                         if rec['cell map'] is True:
                             morpho = database.query(database.Morphology).all()
-                            cell_morpho = [cell for cell in morpho if cell.cell.meta.get('lims_specimen_id') in cell_specimens]
-                            cell_meta = [cell.meta.get('morpho_db_hash') for cell in cell_morpho if cell.meta is not None]
-                            has_morpho = len(cell_meta) > 0
-                            rec['morphology'] = has_morpho
+                            cell_morpho = [cell.dendrite_type for cell in morpho if cell.cell.meta.get('lims_specimen_id') in cell_specimens]
+                            has_morpho = [dendrite is not None for dendrite in cell_morpho]
+                            rec['morphology'] = any(has_morpho)
                             layers = [cell.cortical_layer for cell in morpho if cell.cell.meta.get('lims_specimen_id') in cell_specimens]
                             layers_drawn = [layer is not None for layer in layers]
-                            rec['layers drawn'] = all(layers_drawn)
+                            rec['layers drawn'] = any(layers_drawn)
                         else:
                             rec['layers drawn'] = '-'
                             rec['morphology'] = '-'

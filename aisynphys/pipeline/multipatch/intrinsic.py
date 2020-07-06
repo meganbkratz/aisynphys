@@ -12,7 +12,9 @@ from ipfx.stimulus_protocol_analysis import LongSquareAnalysis
 from ipfx.ephys_data_set import Sweep, SweepSet
 from .pipeline_module import MultipatchPipelineModule
 from .experiment import ExperimentPipelineModule
+from .dataset import DatasetPipelineModule
 from ...nwb_recordings import get_lp_sweeps, get_pulse_times, get_db_recording
+
 
 class IntrinsicPipelineModule(MultipatchPipelineModule):
     
@@ -36,7 +38,6 @@ class IntrinsicPipelineModule(MultipatchPipelineModule):
         n_cells = len(expt.cell_list)
         ipfx_fail = 0
         for cell in expt.cell_list:
-            qc_pass = True
             dev_id = cell.electrode.device_id
             target_v, if_curve = get_lp_sweeps(sweeps, dev_id)
             lp_sweeps = target_v + if_curve
