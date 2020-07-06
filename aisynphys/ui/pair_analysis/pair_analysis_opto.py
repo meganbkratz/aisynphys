@@ -392,10 +392,12 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             {'name':'post-deconvolve bessel', 'type':'float', 'value':1e3, 'suffix':'Hz', 'siPrefix':True, 'dec':True},
             {'name':'event_threshold_fraction', 'type':'float', 'value':0.3, 'step':0.1}
             ])
+        self.threshold_line = pg.InfiniteLine(pos=0, angle=0, pen='y', movable=True)
         self.param_tree.addParameters(self.processing_params)
         self.event_params = pg.parametertree.Parameter.create(name="Events", type='group')
         self.param_tree.addParameters(self.event_params)
         #self.event_params.sigAddNew.connect(self.add_event_param)
+        self.threshold_line.sigPositionChanged.connect(self.threshold_line_moved)
 
         for param in self.processing_params.children():
             param.sigValueChanged.connect(self.process_data)
@@ -542,6 +544,10 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         self.plot_grid[(0,0)].autoRange()
         self.process_data()
 
+    def threshold_line_moved(self, line):
+        frac = line.value()/max(abs(self.post_filtered.data))
+        self.processing_params.child('event_threshold_fraction').setValue(frac)
+
     def process_data(self):
 
         plot = self.plot_grid[(1,0)]
@@ -557,17 +563,20 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         pre_filtered = filters.bessel_filter(self.average_response, pre_bessel, order=4, btype='low', bidir=True)
         self.deconvolved = ev_detect.exp_deconvolve(pre_filtered, tau)
-        post_filtered = filters.bessel_filter(self.deconvolved, post_bessel, order=1, btype='low', bidir=True)
+        self.post_filtered = filters.bessel_filter(self.deconvolved, post_bessel, order=1, btype='low', bidir=True)
 
         plot.plot(pre_filtered.time_values, pre_filtered.data, pen='b')
         plot.plot(self.deconvolved.time_values, self.deconvolved.data, pen='r')
-        plot.plot(post_filtered.time_values, post_filtered.data, pen='g')
+        plot.plot(self.post_filtered.time_values, self.post_filtered.data, pen='g')
 
-        threshold = threshold_frac*max(post_filtered.data)
-        plot.plot(post_filtered.time_values, [threshold]*len(post_filtered), pen='y')
+        threshold = threshold_frac*max(self.post_filtered.data)
+        with pg.SignalBlock(self.threshold_line.sigPositionChanged, self.threshold_line_moved):
+            self.threshold_line.setPos(threshold)
+        plot.addItem(self.threshold_line)
+        #plot.plot(post_filtered.time_values, [threshold]*len(post_filtered), pen='y')
 
         ## index, length, sum, peak, peak_index, time, duration, area, peak_time
-        self.deconvolved_events = ev_detect.threshold_events(post_filtered, threshold) ## find events in deconvolved trace
+        self.deconvolved_events = ev_detect.threshold_events(self.post_filtered, threshold) ## find events in deconvolved trace
         plot.addItem(pg.VTickGroup(self.deconvolved_events['time']))
 
         self.update_events(self.deconvolved_events)
@@ -622,6 +631,8 @@ class LatencyParam(pg.parametertree.parameterTypes.SimpleParameter):
     def update_param_value(self, line):
         with pg.SignalBlock(self.sigValueChanged, self.update_line_position):
             self.setValue(line.value())
+
+
 
 
 
