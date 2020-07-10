@@ -11,7 +11,7 @@ class ExperimentBrowser(pg.TreeWidget):
     # TODO: add filtering options, cell info, context menu of actions, etc.
     
     def __init__(self):
-        self.all_columns = ['date', 'timestamp', 'rig', 'organism', 'project', 'region', 'genotype', 'acsf']
+        self.all_columns = ['date', 'id', 'timestamp', 'rig', 'organism', 'project', 'region', 'genotype', 'acsf']
         self.visible_columns = self.all_columns[:]
         
         pg.TreeWidget.__init__(self)
@@ -56,7 +56,7 @@ class ExperimentBrowser(pg.TreeWidget):
                 date = expt.acq_timestamp
                 date_str = datetime.fromtimestamp(date).strftime('%Y-%m-%d')
                 slice = expt.slice
-                expt_item = pg.TreeWidgetItem(map(str, [date_str, '%0.3f'%expt.acq_timestamp, expt.rig_name, slice.species, expt.project_name, expt.target_region, slice.genotype, expt.acsf]))
+                expt_item = pg.TreeWidgetItem(map(str, [date_str, expt.ext_id, '%0.3f'%expt.acq_timestamp, expt.rig_name, slice.species, expt.project_name, expt.target_region, slice.genotype, expt.acsf]))
                 expt_item.expt = expt
                 self.addTopLevelItem(expt_item)
 
