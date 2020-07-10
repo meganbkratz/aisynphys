@@ -163,7 +163,7 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                     if stim_num is None: ### this is a trace that would have been labeled as 'unknown'
                         continue
                     stim = stim_log[str(int(stim_num))]
-                    cell_entry = cell_entries[stim['stimulationPoint']['name']]
+                    cell_entry = cell_entries.get(stim['stimulationPoint']['name'])
 
                     ## get stimulation shape parameters
                     if stim_log['version'] >=3:
@@ -201,10 +201,10 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         #resampled = pulse['reporter'].resample(sample_rate=20000)
 
                         t0, t1 = pulse[0], pulse[1]
-                        
-                        clock_time = t0 + datetime_to_timestamp(rec_entry.start_time)
-                        prev_pulse_dt = clock_time - last_stim_pulse_time.get(cell_entry.ext_id, -np.inf)
-                        last_stim_pulse_time[cell_entry.ext_id] = clock_time
+                        if cell_entry is not None:
+                            clock_time = t0 + datetime_to_timestamp(rec_entry.start_time)
+                            prev_pulse_dt = clock_time - last_stim_pulse_time.get(cell_entry.ext_id, -np.inf)
+                            last_stim_pulse_time[cell_entry.ext_id] = clock_time
                         pulse_entry = db.StimPulse(
                             recording=rec_entry,
                             cell=cell_entry,
@@ -233,6 +233,8 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         pulse_entry.qc_pass = qc_pass
                         if not qc_pass:
                             pulse_entry.meta['qc_failures'] = qc_failures
+                        if cell_entry is None:
+                            pulse_entry.meta.get('warnings', []).append('No cell named "%s" was found in this experiment.' % stim['stimulationPoint']['name'])
 
                         session.add(pulse_entry)
                         pulse_entries[i] = pulse_entry
