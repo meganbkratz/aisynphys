@@ -60,7 +60,8 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
         expt = AI_Experiment(loader=OptoExperimentLoader(site_path=path))
         nwb = expt.data
         stim_log = expt.loader.load_stimulation_log()
-        if stim_log['version'] < 3:
+        stim_log_version = stim_log.get('version', 0)
+        if stim_log_version < 3:
             ## gonna need to load an image in order to calculate spiral size later
             from acq4.util.DataManager import getHandle
 
@@ -163,10 +164,14 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                     if stim_num is None: ### this is a trace that would have been labeled as 'unknown'
                         continue
                     stim = stim_log[str(int(stim_num))]
-                    cell_entry = cell_entries.get(stim['stimulationPoint']['name'])
+                    if stim_log_version == 0:
+                        cell_name = 'Point %i' % stim['stimulationPoint'] 
+                    else:
+                        cell_name = stim['stimulationPoint']['name']
+                    cell_entry = cell_entries.get(cell_name)
 
                     ## get stimulation shape parameters
-                    if stim_log['version'] >=3:
+                    if stim_log_version >=3:
                         shape={'spiral_revolutions':stim['shape']['spiral revolutions'], 'spiral_size':stim['shape']['size']}
                     else:
                         ## need to calculate spiral size from reference image, cause stimlog is from before we were saving spiral size
@@ -217,7 +222,7 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                             #data_start_time=resampled.t0,
                             #wavelength,
                             #light_source,
-                            position=stim['stimPos'],
+                            position=stim.get('stimPos', stim['pos']), ### older stim log versions don't have stimPos
                             #position_offset=stim['offset'],
                             #device_name=rec.device_id,
                             #qc_pass=None
@@ -234,7 +239,7 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         if not qc_pass:
                             pulse_entry.meta['qc_failures'] = qc_failures
                         if cell_entry is None:
-                            pulse_entry.meta.get('warnings', []).append('No cell named "%s" was found in this experiment.' % stim['stimulationPoint']['name'])
+                            pulse_entry.meta.get('warnings', []).append('No cell named "%s" was found in this experiment.' % cell_name)
 
                         session.add(pulse_entry)
                         pulse_entries[i] = pulse_entry
@@ -347,7 +352,10 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                             continue
                         
                         stim = stim_log[str(int(stim_num))]
-                        pre_cell_name = str(stim['stimulationPoint']['name'])
+                        if stim_log_version == 0:
+                            pre_cell_name = 'Point %i' % stim['stimulationPoint'] 
+                        else:
+                            pre_cell_name = stim['stimulationPoint']['name']
 
                         post_cell_name = str('electrode_'+ str(post_rec.device_id))
 
