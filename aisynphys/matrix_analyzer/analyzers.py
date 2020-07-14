@@ -142,8 +142,6 @@ class Analyzer(pg.QtCore.QObject):
         return self.group_results
 
 
-
-
 class ConnectivityAnalyzer(Analyzer):
 
     def __init__(self, analyzer_mode):
@@ -250,9 +248,11 @@ class ConnectivityAnalyzer(Analyzer):
             p1 = p.sum()
             connected = float(p1[0])
             probed = float(p1[1])
-            return connection_probability_ci(connected, probed)
+            lower, upper = connection_probability_ci(connected, probed)
+            return (1.0 - (upper - lower)) ** 2
         if x.name == 'Distance':
-            return [-np.nanstd(x), np.nanstd(x)]
+            lower, upper = [-np.nanstd(x), np.nanstd(x)]
+            return (1.0 - (upper - lower)) ** 2
         else:
             return float('nan')
     
@@ -321,7 +321,6 @@ class ConnectivityAnalyzer(Analyzer):
         print ("Probed Pairs:")
         for probed in probed_pairs:
             print ("\t %s" % (probed))
-        
         
     def plot_element_data(self, pre_class, post_class, element, field_name, color='g', trace_plt=None):
         summary = element.agg(self.summary_stat)  
@@ -464,6 +463,8 @@ class StrengthAnalyzer(Analyzer):
         'PSC Amplitude': [self.metric_summary, self.metric_conf],
         'PSC Rise Time': [self.metric_summary, self.metric_conf],
         'PSC Decay Tau': [self.metric_summary, self.metric_conf],
+        'Coupling Coefficient': [self.metric_summary, self.metric_conf],
+        'Junctional Conductance': [self.metric_summary, self.metric_conf],
         'strength_no_data': self.metric_summary,
         }
         self.summary_dtypes = {} ## dict to specify how we want to cast different summary measures
@@ -508,6 +509,16 @@ class StrengthAnalyzer(Analyzer):
                 'Max': 4e-3,
                 'colormap': thermal_colormap,
             }}),
+            ('Coupling Coefficient', {'mode': 'range', 'units': '', 'defaults': {
+                'Min': 0, 
+                'Max': 0.5,
+                'colormap': thermal_colormap,
+            }}),
+            ('Junctional Conductance', {'mode': 'range', 'units': 'S', 'defaults': {
+                'Min': 0, 
+                'Max': 1e-3,
+                'colormap': thermal_colormap,
+            }}),
             ('None',{}),
         ]
 
@@ -519,6 +530,8 @@ class StrengthAnalyzer(Analyzer):
             'PSP Decay Tau': '{PSP Decay Tau.ms}',
             'PSC Rise Time': '{PSC Rise Time.ms}',
             'PSC Decay Tau': '{PSC Decay Tau.ms}',
+            'Coupling Coefficient': '{Coupling Coefficient:0.2f}',
+            'Junctional Conductance': '{Junctional Conductance:0.2e}',
         }
 
     def invalidate_output(self):
@@ -539,35 +552,42 @@ class StrengthAnalyzer(Analyzer):
             pre_class, post_class = key
 
             for pair in class_pairs:
-                if pair.has_synapse is not True:
+                no_data = False
+                synapse = None
+                gap = None
+                if pair.has_synapse is not True and pair.has_electrical is not True:
                     no_data = True
-                elif pair.has_synapse is True:
-                    no_data = False
-                    synapse = pair.synapse
-                    if synapse is None:
-                        no_data = True
-                    else:
-                        psp_amp = synapse.psp_amplitude
-                        psp_decay_tau = synapse.psp_decay_tau
-                        psp_rise_time = synapse.psp_rise_time 
-                        psc_amp = synapse.psc_amplitude
-                        psc_rise_time = synapse.psc_rise_time
-                        psc_decay_tau = synapse.psc_decay_tau
-                        latency = synapse.latency
-
-                    
+                if pair.has_synapse is True:
+                    synapse = pair.synapse   
+                if pair.has_electrical is True:
+                    gap = pair.gap_junction
+                if synapse is None and gap is None:   
+                    no_data = True
+                if synapse is not None:
+                    psp_amp = synapse.psp_amplitude
+                    psp_decay_tau = synapse.psp_decay_tau
+                    psp_rise_time = synapse.psp_rise_time 
+                    psc_amp = synapse.psc_amplitude
+                    psc_rise_time = synapse.psc_rise_time
+                    psc_decay_tau = synapse.psc_decay_tau
+                    latency = synapse.latency
+                if gap is not None:
+                    coupling_coeff = gap.coupling_coeff_pulse
+                    junctional_cond = gap.junctional_conductance           
 
                 results[pair] = {
                 'strength_no_data': no_data,
                 'pre_class': pre_class,
                 'post_class': post_class,
-                'PSP Amplitude': psp_amp if no_data is False else float('nan'),
-                'PSP Rise Time': psp_rise_time if no_data is False else float('nan'),
-                'PSP Decay Tau': psp_decay_tau if no_data is False else float('nan'),
-                'PSC Amplitude': psc_amp if no_data is False else float('nan'),
-                'PSC Rise Time': psc_rise_time if no_data is False else float('nan'),
-                'PSC Decay Tau': psc_decay_tau if no_data is False else float('nan'),
-                'Latency': latency if no_data is False else float('nan'),
+                'PSP Amplitude': psp_amp if synapse is not None else float('nan'),
+                'PSP Rise Time': psp_rise_time if synapse is not None else float('nan'),
+                'PSP Decay Tau': psp_decay_tau if synapse is not None else float('nan'),
+                'PSC Amplitude': psc_amp if synapse is not None else float('nan'),
+                'PSC Rise Time': psc_rise_time if synapse is not None else float('nan'),
+                'PSC Decay Tau': psc_decay_tau if synapse is not None else float('nan'),
+                'Latency': latency if synapse is not None else float('nan'),
+                'Coupling Coefficient': coupling_coeff if gap is not None else float('nan'),
+                'Junctional Conductance': junctional_cond if gap is not None else float('nan'),
                 }
 
         self.results = pd.DataFrame.from_dict(results, orient='index')
@@ -585,7 +605,8 @@ class StrengthAnalyzer(Analyzer):
             return x.mean()
 
     def metric_conf(self, x):
-        return [-x.std(), x.std()]
+        lower, upper = [-x.std(), x.std()]
+        return (1.0 - (upper - lower)) ** 2
 
     def print_element_info(self, pre_class, post_class, element, field_name=None):
         if field_name is not None:
@@ -639,11 +660,11 @@ class StrengthAnalyzer(Analyzer):
                 start_time = rsf.vc_avg_data_start_time if field_name.startswith('PSC') else rsf.ic_avg_data_start_time
                 if latency is not None and start_time is not None:
                     if field_name == 'Latency':
-                        xoffset = start_time + latency
+                        xoffset = start_time
                     else:
                         xoffset = start_time - latency
                     baseline_window = [abs(xoffset)-1e-3, abs(xoffset)]
-                    traceA = format_trace(traceA, baseline_window, x_offset=xoffset, align='psp')
+                    traceA = format_trace(traceA, baseline_window, x_offset=xoffset)
                     trace_itemA = trace_plt[1].plot(traceA.time_values, traceA.data)
                     trace_itemA.pair = pair
                     trace_itemA.curve.setClickable(True)
@@ -654,9 +675,9 @@ class StrengthAnalyzer(Analyzer):
                     traceB = bessel_filter(traceB, 5000, btype='low', bidir=True)
                     start_time = rsf.vc_avg_data_start_time
                     if latency is not None and start_time is not None:
-                        xoffset = start_time + latency
+                        xoffset = start_time
                         baseline_window = [abs(xoffset)-1e-3, abs(xoffset)]
-                        traceB = format_trace(traceB, baseline_window, x_offset=xoffset, align='psp')
+                        traceB = format_trace(traceB, baseline_window, x_offset=xoffset)
                         trace_itemB = trace_plt[0].plot(traceB.time_values, traceB.data)
                         trace_itemB.pair = pair
                         trace_itemB.curve.setClickable(True)
@@ -666,6 +687,8 @@ class StrengthAnalyzer(Analyzer):
             if trace_itemA is not None:
                 values.append(value)
                 point_data.append(pair)
+            else:
+                self.pair_items[pair.id].extend([None, None])
         y_values = pg.pseudoScatter(np.asarray(values, dtype=float), spacing=1)
         scatter = pg.ScatterPlotItem(symbol='o', brush=(color + (150,)), pen='w', size=12)
         scatter.setData(values, y_values + 10., data=point_data)
@@ -725,6 +748,8 @@ class StrengthAnalyzer(Analyzer):
 
     def deselect_pairs(self):
         for (traceA, traceB, point, color) in self.pair_items.values():
+            if all([item is None for item in [traceA, traceB, point, color]]): 
+                continue
             point.setBrush(color + (150,))
             point.setSize(12)
             if traceA is not None:
@@ -752,6 +777,14 @@ class DynamicsAnalyzer(Analyzer):
             'Paired pulse STP': [self.metric_summary, self.metric_conf],
             'Train-induced STP': [self.metric_summary, self.metric_conf],
             'STP recovery': [self.metric_summary, self.metric_conf],
+            'PSP 90th Percentile': [self.metric_summary, self.metric_conf],
+            'Variability - resting state': [self.metric_summary, self.metric_conf],
+            'Variability - second pulse': [self.metric_summary, self.metric_conf],
+            'Variability - train induced': [self.metric_summary, self.metric_conf],
+            'Initial variability change': [self.metric_summary, self.metric_conf],
+            'Train-induced variability change': [self.metric_summary, self.metric_conf],
+            'Paired event correlation r': [self.metric_summary, self.metric_conf],
+            'Paired event correlation p': [self.metric_summary, self.metric_conf],
         }
         self.summary_dtypes = {} ## dict to specify how we want to cast different summary measures
         ## looks like {('pulse_ratio_8_1_50hz', 'metric_summary'):float}
@@ -771,7 +804,63 @@ class DynamicsAnalyzer(Analyzer):
                 [0, 0.5, 1.0],
                 [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
             )}}),
+            ('PSP 90th Percentile', {'mode': 'range', 'units': 'V', 'defaults': {
+                'Min': -1e-3, 
+                'Max': 1e-3, 
+                'colormap': pg.ColorMap(
+                [0, 0.5, 1.0],
+                [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
+            )}}),
             ('STP recovery', {'mode': 'range', 'defaults': {
+                'Min': -1, 
+                'Max': 1, 
+                'colormap': pg.ColorMap(
+                [0, 0.5, 1.0],
+                [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
+            )}}),
+            ('Variability - resting state', {'mode': 'range', 'defaults': {
+                'Min': -0.5, 
+                'Max': 0.5, 
+                'colormap': pg.ColorMap(
+                [0, 0.5, 1.0],
+                [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
+            )}}),
+            ('Variability - second pulse', {'mode': 'range', 'defaults': {
+                'Min': -0.5, 
+                'Max': 0.5, 
+                'colormap': pg.ColorMap(
+                [0, 0.5, 1.0],
+                [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
+            )}}),
+            ('Variability - train induced', {'mode': 'range', 'defaults': {
+                'Min': -0.5, 
+                'Max': 0.5, 
+                'colormap': pg.ColorMap(
+                [0, 0.5, 1.0],
+                [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
+            )}}),
+            ('Initial variability change', {'mode': 'range', 'defaults': {
+                'Min': -1, 
+                'Max': 1, 
+                'colormap': pg.ColorMap(
+                [0, 0.5, 1.0],
+                [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
+            )}}),
+            ('Train-induced variability change', {'mode': 'range', 'defaults': {
+                'Min': -1, 
+                'Max': 1, 
+                'colormap': pg.ColorMap(
+                [0, 0.5, 1.0],
+                [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
+            )}}),
+            ('Paired event correlation r', {'mode': 'range', 'defaults': {
+                'Min': -1, 
+                'Max': 1, 
+                'colormap': pg.ColorMap(
+                [0, 0.5, 1.0],
+                [(0, 0, 255, 255), (56, 0, 87, 255), (255, 0, 0, 255)],
+            )}}),
+            ('Paired event correlation p', {'mode': 'range', 'defaults': {
                 'Min': -1, 
                 'Max': 1, 
                 'colormap': pg.ColorMap(
@@ -785,6 +874,14 @@ class DynamicsAnalyzer(Analyzer):
             'Paired pulse STP': '{Paired pulse STP:0.2f}',
             'Train-induced STP': '{Train-induced STP:0.2f}',
             'STP recovery': '{STP recovery:0.2f}',
+            'PSP 90th Percentile': '{PSP 90th Percentile.mV}',
+            'Variability - resting state': '{Variability - resting state:0.2f}',
+            'Variability - second pulse': '{Variability - second pulse:0.2f}',
+            'variability - train induced': '{Variability - train induced:0.2f}',
+            'Initial variability change': '{Initial variability change:0.2f}',
+            'Train-induced variability change': '{Train-induced variability change:0.2f}',
+            'Paired event correlation r': '{Paired event correlation r:0.2f}',
+            'Paired event correlation p': '{Paired event correlation p:0.2f}',
         }
 
     def invalidate_output(self):
@@ -798,7 +895,8 @@ class DynamicsAnalyzer(Analyzer):
             return np.nanmean(x)
 
     def metric_conf(self, x):
-        return [-np.nanstd(x), np.nanstd(x)]
+        n = np.isfinite(x).sum()
+        return np.clip(n / 10, 0, 1)
 
     def measure(self, pair_groups):
         """Given a list of cell pairs and a dict that groups cells together by class,
@@ -819,13 +917,24 @@ class DynamicsAnalyzer(Analyzer):
                     no_data = False
                     dynamics = pair.dynamics
 
+                lcv_rest = (dynamics.variability_resting_state if dynamics is not None else np.nan) or np.nan
+                lcv_sec = (dynamics.variability_second_pulse_50hz if dynamics is not None else np.nan) or np.nan
+                lcv_train = (dynamics.variability_stp_induced_state_50hz if dynamics is not None else np.nan) or np.nan
                 results[pair] = {
-                'dynamics_no_data': no_data,
-                'pre_class': pre_class,
-                'post_class': post_class,
-                'Paired pulse STP': dynamics.stp_initial_50hz if dynamics is not None else float('nan'),
-                'Train-induced STP': dynamics.stp_induction_50hz if dynamics is not None else float('nan'),
-                'STP recovery': dynamics.stp_recovery_250ms if dynamics is not None else float('nan'),
+                    'dynamics_no_data': no_data,
+                    'pre_class': pre_class,
+                    'post_class': post_class,
+                    'Paired pulse STP': dynamics.stp_initial_50hz if dynamics is not None else np.nan,
+                    'Train-induced STP': dynamics.stp_induction_50hz if dynamics is not None else np.nan,
+                    'STP recovery': dynamics.stp_recovery_250ms if dynamics is not None else np.nan,
+                    'PSP 90th Percentile': dynamics.pulse_amp_90th_percentile if dynamics is not None else np.nan,
+                    'Variability - resting state': lcv_rest,
+                    'Variability - second pulse': lcv_sec,
+                    'Variability - train induced': lcv_train,
+                    'Initial variability change': lcv_sec - lcv_rest,
+                    'Train-induced variability change': lcv_train - lcv_rest,
+                    'Paired event correlation r': dynamics.paired_event_correlation_r if dynamics is not None else np.nan,
+                    'Paired event correlation p': dynamics.paired_event_correlation_p if dynamics is not None else np.nan,
                 }
 
         
@@ -913,28 +1022,23 @@ class DynamicsAnalyzer(Analyzer):
         self.select_pair(pair)
 
     def select_pair(self, pair):
-        point= self.pair_items[pair.id]
+        point, color = self.pair_items[pair.id]
         point.setBrush(pg.mkBrush('y'))
         point.setSize(15)
-        # if traceA is not None:
-        #     traceA.setPen('y', width=3)
-        #     traceA.setZValue(10)
-        # if traceB is not None:
-        #     traceB.setPen('y', width=3)
-        #     traceB.setZValue(10)
         print('Clicked:' '%s' % pair)
         print(self.results.loc[pair])
 
     def summary(self, results, metric):
         print('')
 
+    def deselect_pairs(self):
+        pass
 
-def format_trace(trace, baseline_win, x_offset=1e-3, align='spike'):
-    # align can be to the pre-synaptic spike (default) or the onset of the PSP ('psp')
+
+def format_trace(trace, baseline_win, x_offset=1e-3):
     baseline = float_mode(trace.time_slice(baseline_win[0],baseline_win[1]).data)
     trace = TSeries(data=(trace.data-baseline), sample_rate=db.default_sample_rate)
-    if align == 'psp':
-        trace.t0 = x_offset
+    trace.t0 = x_offset
     return trace
 
 def get_all_output_fields(analyzer_list):

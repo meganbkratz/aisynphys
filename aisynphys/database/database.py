@@ -61,6 +61,8 @@ class JSONObject(TypeDecorator):
         return json.dumps(value)
         
     def process_result_value(self, value, dialect):
+        if value is None:
+            return None
         return json.loads(value)
 
 
@@ -152,6 +154,10 @@ def make_table(ormbase, name, columns, base=None, **table_args):
 
     for column in columns:
         colname, coltype = column[:2]
+        
+        # avoid weird sqlalchemy issues with case handling
+        assert colname == colname.lower(), "Column names must be all lowercase (got %s.%s)" % (name, colname)
+        
         kwds = {} if len(column) < 4 else column[3]
         kwds['comment'] = None if len(column) < 3 else column[2]
         defer_col = kwds.pop('deferred', False)
@@ -160,6 +166,8 @@ def make_table(ormbase, name, columns, base=None, **table_args):
         if coltype not in column_data_types:
             if not coltype.endswith('.id'):
                 raise ValueError("Unrecognized column type %s" % coltype)
+            # force indexing on all foreign keys; otherwise deletes can become vrey slow
+            kwds['index'] = True
             props[colname] = Column(Integer, ForeignKey(coltype, ondelete=ondelete), **kwds)
         else:
             ctyp = column_data_types[coltype]
@@ -249,7 +257,7 @@ class Database(object):
             return object.__getattribute__(self, attr)
 
     def __repr__(self):
-        return "<Database %s (%s)>" % (self.ro_address, 'ro' if self.rw_address is None else 'rw')
+        return "<%s %s (%s)>" % (type(self).__name__, self.ro_address, 'ro' if self.rw_address is None else 'rw')
 
     def __str__(self):
         # str(engine) does a nice job of masking passwords
@@ -334,7 +342,8 @@ class Database(object):
         self._check_engines()
         if self._ro_engine is None:
             if self.backend == 'postgresql':
-                opts = {'pool_size': 10, 'max_overflow': 40, 'isolation_level': 'AUTOCOMMIT'}
+                # use echo=True to log all db queries for debugging
+                opts = {'echo': False, 'pool_size': 10, 'max_overflow': 40, 'isolation_level': 'AUTOCOMMIT'}
             else:
                 opts = {}        
             self._ro_engine = create_engine(self.ro_address, **opts)

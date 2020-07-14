@@ -2,7 +2,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from ..database import make_table_docstring, make_table as orig_make_table
 
 # schema version should be incremented whenever the schema has changed
-schema_version = "15"
+schema_version = "16"
 
 # all time series data are downsampled to this rate in the DB
 default_sample_rate = 20000
@@ -19,6 +19,7 @@ from .meta import *
 from .pipeline import *
 from .slice import *
 from .experiment import *
+from .intrinsic import *
 from .morphology import *
 from .dataset import *
 from .synapse import *

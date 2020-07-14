@@ -17,7 +17,7 @@ pyodbc = optional_import('pyodbc')
 
 amp_cols = {
             'Comment': 'meta',
-            'Result pass/fail BA': 'result_BA',
+            'Result pass/fail BA': 'result_ba',
             '% area 400-10000bp BA': 'area_400_10000bp',
             'Picogreen pg/ul': 'picogreen_yield',
             }    
@@ -30,16 +30,20 @@ mapping_cols = {
             'topLeaf': 'top_leaf',
             'topLeafValue': 'top_leaf_score',
             'broad_class_label': 'broad_class_label',
-            'subclass_label': 'sublass_label',
+            'subclass_label': 'subclass_label',
             'quality_score_label': 'quality_score',
             'seurat_cluster_label': 'seurat_cluster',
             'seurat_prediction_score_label': 'seurat_score',
             'Tree_first_cl': 'tree_first_cluster',
-            'Tree_first_bt': 'tree_first_score',
+            'Tree_first_bt': 'tree_first_bt',
+            'Tree_first_KL': 'tree_first_kl',
+            'Tree_first_cor': 'tree_first_cor',
             'Tree_second_cl': 'tree_second_cluster',
-            'Tree_second_bt': 'tree_second_score',
+            'Tree_second_bt': 'tree_second_bt',
+            'Tree_second_KL': 'tree_second_kl',
+            'Tree_second_cor': 'tree_second_cor',
             'Tree_third_cl': 'tree_third_cluster',
-            'Tree_third_bt': 'tree_third_score',
+            'Tree_third_bt': 'tree_third_bt',
             'Tree_call': 'tree_call',
             'Genes.Detected.CPM': 'genes_detected',
             'marker_sum_norm_label': 'norm_marker_sum'
@@ -189,7 +193,7 @@ def get_amp_results():
     global amp_cache
     if amp_cache is None:
         folder_path = config.amplification_report_address
-        file_paths = [os.path.join(folder_path, path) for path in os.listdir(folder_path)]
+        file_paths = [os.path.join(folder_path, path) for path in os.listdir(folder_path) if os.path.splitext(path)[1]=='.xlsx']
         mod_time = {os.path.getmtime(path): path for path in file_paths}
         most_recent = max(mod_time.keys())
         current_results = mod_time[most_recent]

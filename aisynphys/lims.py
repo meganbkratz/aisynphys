@@ -6,22 +6,27 @@ import sqlalchemy
 
 
 _lims_engine = None
+_lims_engine_pid = None
 def lims_engine():
-    global _lims_engine
+    global _lims_engine, _lims_engine_pid
+    if _lims_engine is not None and os.getpid() != _lims_engine_pid:
+        # Force forked processes to dispose and recreate engines.
+        # https://docs.sqlalchemy.org/en/latest/faq/connections.html#how-do-i-use-engines-connections-sessions-with-python-multiprocessing-or-os-fork
+        _lims_engine.dispose()
+        _lims_engine = None
+    
     if _lims_engine is None:
-        from sqlalchemy import create_engine
-        from sqlalchemy.pool import NullPool
-        _lims_engine = create_engine(config.lims_address, poolclass=NullPool)
+        _lims_engine = sqlalchemy.create_engine(config.lims_address)
+        _lims_engine_pid = os.getpid()
+    
     return _lims_engine
 
 
 def query(query_str):
-    conn = lims_engine().connect()
-    try:
-        result = conn.execute(query_str).fetchall()
-    finally:
-        conn.close()
-    return result
+    """Query LIMS database and return result.
+    """
+    with lims_engine().connect() as conn:
+        return conn.execute(query_str).fetchall()
 
 
 def specimen_info(specimen_name=None, specimen_id=None):
@@ -634,6 +639,19 @@ def cell_layer(cell):
         raise Exception ('Incorrect number of layers for cell %d' % cell)
     return recs[0][0]
 
+def all_cell_layers():
+    """ Return layer calls for all Cell specimens 
+    """
+    q = """select structures.acronym, specimens.id
+    from structures
+    left join specimens on specimens.cortex_layer_id=structures.id
+    left join specimen_types_specimens on specimen_types_specimens.specimen_id=specimens.id
+    left join specimen_types on specimen_types.id=specimen_types_specimens.specimen_type_id
+    where specimen_types.name like 'Cell'
+    """
+
+    recs = query(q)
+    return recs
 
 if __name__ == '__main__':
     # testing specimen

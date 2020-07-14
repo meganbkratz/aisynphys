@@ -76,6 +76,9 @@ DRIVER_LINES = {                  # dependencies     products
     'Fam84b-FlpO':                [(['fam84b'],       ['flp'])],
     'Glt25d2-Cre_NF107':          [(['glt25d2'],      ['cre'])],
     'Esr2-IRES2-Cre':             [(['esr2'],         ['cre'])],
+    'Calb2-IRES-Cre':             [(['calb2'],        ['cre'])],
+    'Tac1-IRES2-Cre':             [(['tac1'],         ['cre'])],
+
     
     'rAAV-mDlx-GFP':                                         [(['mDlx'],                    ['GFP'])],
     'rAAV-Dlx2.0-SYFP2':                                     [(['3xcorehI56i'],             ['YFP'])],  # pan-GABA
@@ -149,6 +152,7 @@ REPORTER_LINES = {                # dependencies             products
                                    (['flp'],                  ['tdTomato'])],
     'pAAV-Ef1a-fDIO-EGFP':        [(['flp'],                  ['EGFP'])],
     'pAAV-Ef1a-cDIO-dTomato':     [(['cre'],                  ['tdTomato'])],
+    'AAV-Syn-FLEX-ChrimsonR-eYFP-Kv2.1':[(['cre'], ['ChrimsonR', 'EYFP'])],
 }
 
 

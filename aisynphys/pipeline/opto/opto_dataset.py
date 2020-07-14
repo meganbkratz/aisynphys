@@ -1,24 +1,25 @@
 from __future__ import print_function
 from collections import OrderedDict
-import os
+import os, struct, hashlib
+import numpy as np
 from ... import config #, synphys_cache, lims
-from ...util import timestamp_to_datetime
+from ...util import timestamp_to_datetime, datetime_to_timestamp
 from ..pipeline_module import DatabasePipelineModule
 from .opto_experiment import OptoExperimentPipelineModule
-from neuroanalysis.data.experiment import Experiment
-from neuroanalysis.data.libraries import opto
+from neuroanalysis.data.experiment import AI_Experiment
+#from neuroanalysis.data.libraries import opto
+from neuroanalysis.data.loaders.opto_experiment_loader import OptoExperimentLoader
 from neuroanalysis.baseline import float_mode
-#from neuroanalysis.stimuli import find_square_pulses
 #from ...data import BaselineDistributor, PulseStimAnalyzer #Experiment, MultiPatchDataset, MultiPatchProbe, PulseStimAnalyzer, MultiPatchSyncRecAnalyzer, BaselineDistributor
 from neuroanalysis.data import PatchClampRecording
 #from optoanalysis.optoadapter import OptoRecording
-from optoanalysis.data.dataset import OptoRecording
-from optoanalysis.analyzers import OptoSyncRecAnalyzer, OptoBaselineAnalyzer
+#from optoanalysis.data.dataset import OptoRecording
+from optoanalysis.analyzers import OptoSyncRecAnalyzer
 from neuroanalysis.analyzers.stim_pulse import GenericStimPulseAnalyzer, PWMStimPulseAnalyzer, PatchClampStimPulseAnalyzer
 from neuroanalysis.analyzers.baseline import BaselineDistributor
 import optoanalysis.power_calibration as power_cal
 import optoanalysis.qc as qc
-from neuroanalysis.stimuli import find_square_pulses
+#import cProfile
 
 
 class OptoDatasetPipelineModule(DatabasePipelineModule):
@@ -39,6 +40,10 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
     # when running parallel, each child process may run only one job before being killed
     maxtasksperchild = 1 
 
+    # @classmethod
+    # def create_db_entries(cls, job, session):
+    #     cProfile.runctx('cls.create_db_entries_real(job, session)', globals(), {'cls':cls, 'job':job, 'session':session}, filename='profile.txt')
+
     @classmethod
     def create_db_entries(cls, job, session):
         db = job['database']
@@ -47,40 +52,29 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
         # Load experiment from DB
         expt_entry = db.experiment_from_ext_id(job_id, session=session)
         elecs_by_ad_channel = {elec.device_id:elec for elec in expt_entry.electrodes}
-
-        pairs_by_cell_id = {}
-        for pair in expt_entry.pairs.values():
-            pre_cell_id = pair.pre_cell.ext_id
-            post_cell_id = pair.post_cell.ext_id
-            pairs_by_cell_id[(pre_cell_id, post_cell_id)] = pair
-
-        # print('pairs_by_cell_id:')
-        # for k in pairs_by_cell_id.keys():
-        #     print('   ', k)
-
+        cell_entries = expt_entry.cells ## do this once here instead of multiple times later because it's slooooowwwww
+        pairs_by_cell_id = expt_entry.pairs
 
         # load NWB file
         path = os.path.join(config.synphys_data, expt_entry.storage_path)
-        expt = Experiment(site_path=path, loading_library=opto)
+        expt = AI_Experiment(loader=OptoExperimentLoader(site_path=path))
         nwb = expt.data
-        stim_log = expt.library.load_stimulation_log(expt)
-        if stim_log['version'] < 3:
+        stim_log = expt.loader.load_stimulation_log()
+        stim_log_version = stim_log.get('version', 0)
+        if stim_log_version < 3:
             ## gonna need to load an image in order to calculate spiral size later
             from acq4.util.DataManager import getHandle
 
+        last_stim_pulse_time = {}
         # Load all data from NWB into DB
         for srec in nwb.contents:
             temp = srec.meta.get('temperature', None)
             srec_entry = db.SyncRec(ext_id=srec.key, experiment=expt_entry, temperature=temp)
             session.add(srec_entry)
 
-            #raise Exception('stop')
-
             rec_entries = {}
             all_pulse_entries = {}
             for rec in srec.recordings:
-                #if not hasattr(rec, 'device_name'):
-                #    print(rec.device_id, ' doesnt have device name')
                 
                 # import all recordings
                 electrode_entry = elecs_by_ad_channel.get(rec.device_id, None)
@@ -96,16 +90,15 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
 
                 # import patch clamp recording information
                 if isinstance(rec, PatchClampRecording):
-                    oba = OptoBaselineAnalyzer.get(rec)
                     qc_pass, qc_failures = qc.recording_qc_pass(rec)
                     pcrec_entry = db.PatchClampRecording(
                         recording=rec_entry,
                         clamp_mode=rec.clamp_mode,
                         patch_mode=rec.patch_mode,
                         stim_name=rec.stimulus.description,
-                        baseline_potential=oba.baseline_potential,
-                        baseline_current=oba.baseline_current,
-                        baseline_rms_noise=oba.baseline_rms_noise,
+                        baseline_potential=rec.baseline_potential,
+                        baseline_current=rec.baseline_current,
+                        baseline_rms_noise=rec.baseline_rms_noise,
                         qc_pass=qc_pass,
                         meta=None if len(qc_failures) == 0 else {'qc_failures': qc_failures},
                     )
@@ -134,11 +127,17 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                     pulses = psa.pulse_chunks()
                     pulse_entries = {}
                     all_pulse_entries[rec.device_id] = pulse_entries
+                    cell_entry = electrode_entry.cell
 
                     for i,pulse in enumerate(pulses):
                         # Record information about all pulses, including test pulse.
                         t0, t1 = pulse.meta['pulse_edges']
                         resampled = pulse['primary'].resample(sample_rate=20000)
+                        
+                        clock_time = t0 + datetime_to_timestamp(rec_entry.start_time)
+                        prev_pulse_dt = clock_time - last_stim_pulse_time.get(cell_entry.ext_id, -np.inf)
+                        last_stim_pulse_time[cell_entry.ext_id] = clock_time
+
                         pulse_entry = db.StimPulse(
                             recording=rec_entry,
                             pulse_number=pulse.meta['pulse_n'],
@@ -147,11 +146,14 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                             duration=t1-t0,
                             data=resampled.data,
                             data_start_time=resampled.t0,
-                            cell=electrode_entry.cell if electrode_entry is not None else None,
-                            device_name=str(rec.device_id)
+                            #cell=electrode_entry.cell if electrode_entry is not None else None,
+                            cell=cell_entry,
+                            #device_name=str(rec.device_id),
+                            previous_pulse_dt=prev_pulse_dt
                         )
                         session.add(pulse_entry)
                         pulse_entries[pulse.meta['pulse_n']] = pulse_entry
+
 
                 #elif isinstance(rec, OptoRecording) and (rec.device_name=='Fidelity'): 
                 elif rec.device_type == 'Fidelity':
@@ -162,10 +164,14 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                     if stim_num is None: ### this is a trace that would have been labeled as 'unknown'
                         continue
                     stim = stim_log[str(int(stim_num))]
-                    cell_entry = expt_entry.cells[stim['stimulationPoint']['name']]
+                    if stim_log_version == 0:
+                        cell_name = 'Point %i' % stim['stimulationPoint'] 
+                    else:
+                        cell_name = stim['stimulationPoint']['name']
+                    cell_entry = cell_entries.get(cell_name)
 
                     ## get stimulation shape parameters
-                    if stim_log['version'] >=3:
+                    if stim_log_version >=3:
                         shape={'spiral_revolutions':stim['shape']['spiral revolutions'], 'spiral_size':stim['shape']['size']}
                     else:
                         ## need to calculate spiral size from reference image, cause stimlog is from before we were saving spiral size
@@ -193,11 +199,17 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
 
                     ospa = GenericStimPulseAnalyzer.get(rec)
 
-                    for i, pulse in enumerate(ospa.pulses()):
+                    for i, pulse in enumerate(ospa.pulses(channel='reporter')):
                         ### pulse is (start, stop, amplitude)
                     # Record information about all pulses, including test pulse.
                         #t0, t1 = pulse.meta['pulse_edges']
                         #resampled = pulse['reporter'].resample(sample_rate=20000)
+
+                        t0, t1 = pulse[0], pulse[1]
+                        if cell_entry is not None:
+                            clock_time = t0 + datetime_to_timestamp(rec_entry.start_time)
+                            prev_pulse_dt = clock_time - last_stim_pulse_time.get(cell_entry.ext_id, -np.inf)
+                            last_stim_pulse_time[cell_entry.ext_id] = clock_time
                         pulse_entry = db.StimPulse(
                             recording=rec_entry,
                             cell=cell_entry,
@@ -205,13 +217,14 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                             onset_time=pulse[0],#rec.pulse_start_times[i], #t0,
                             amplitude=power_cal.convert_voltage_to_power(pulse[2], timestamp_to_datetime(expt_entry.acq_timestamp), expt_entry.rig_name), ## need to fill in laser/objective correctly
                             duration=pulse[1]-pulse[0],#rec.pulse_duration()[i],
+                            previous_pulse_dt=prev_pulse_dt,
                             #data=resampled.data,
                             #data_start_time=resampled.t0,
                             #wavelength,
                             #light_source,
-                            position=stim['stimPos'],
+                            position=stim.get('stimPos', stim['pos']), ### older stim log versions don't have stimPos
                             #position_offset=stim['offset'],
-                            device_name=rec.device_id,
+                            #device_name=rec.device_id,
                             #qc_pass=None
                             meta = {'shape': shape,
                                     'pockel_cmd':stim.get('prairieCmds',{}).get('laserPower', [None]*100)[i],
@@ -225,9 +238,12 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         pulse_entry.qc_pass = qc_pass
                         if not qc_pass:
                             pulse_entry.meta['qc_failures'] = qc_failures
+                        if cell_entry is None:
+                            pulse_entry.meta.get('warnings', []).append('No cell named "%s" was found in this experiment.' % cell_name)
 
                         session.add(pulse_entry)
                         pulse_entries[i] = pulse_entry
+
 
                 elif 'LED' in rec.device_type:
                     #if rec.device_id == 'TTL1P_0': ## this is the ttl output to Prairie, not an LED stimulation
@@ -244,7 +260,7 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                     pulse_entries = {}
                     all_pulse_entries[rec.device_id] = pulse_entries
 
-                    spa = PWMStimPulseAnalyzer(rec)
+                    spa = PWMStimPulseAnalyzer.get(rec)
                     pulses = spa.pulses(channel='reporter')
                     max_power=power_cal.get_led_power(timestamp_to_datetime(expt_entry.acq_timestamp), expt_entry.rig_name, rec.device_id)
 
@@ -259,7 +275,7 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                             #data=resampled.data, ## don't need data, it's just a square pulse
                             #data_start_time=resampled.t0,
                             #position=None, # don't have a 3D position, have a field
-                            device_name=rec.device_id,
+                            #device_name=rec.device_id,
                             meta = {'shape': 'wide-field', ## TODO: description of field of view
                                     'LED_voltage':str(pulse.amplitude),
                                     'light_source':rec.device_id,
@@ -290,29 +306,75 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                 else:
                     raise Exception('Need to figure out recording type for %s (device_id:%s)' % (rec, rec.device_id))
 
+            # collect and shuffle baseline chunks for each recording
+            baseline_chunks = {}
+            for post_rec in [rec for rec in srec.recordings if isinstance(rec, PatchClampRecording)]:
+                post_dev = post_rec.device_id
+
+                base_dist = BaselineDistributor.get(post_rec)
+                chunks = list(base_dist.baseline_chunks())
+                
+                # generate a different random shuffle for each combination pre,post device
+                # (we are not allowed to reuse the same baseline chunks for a particular pre-post pair,
+                # but it is ok to reuse them across pairs)
+                for pre_dev in srec.devices: 
+                    # shuffle baseline chunks in a deterministic way:
+                    # convert expt_id/srec_id/pre/post into an integer seed
+                    seed_str = ("%s %s %s %s" % (job_id, srec.key, pre_dev, post_dev)).encode()
+                    seed = struct.unpack('I', hashlib.sha1(seed_str).digest()[:4])[0]
+                    rng = np.random.RandomState(seed)
+                    rng.shuffle(chunks)
+                    
+                    baseline_chunks[pre_dev, post_dev] = chunks[:]
+
+            baseline_qc_cache = {}
+            baseline_entry_cache = {}
+
             ### import postsynaptic responses
-            osra = OptoSyncRecAnalyzer(srec)
-            #for stim_rec in srec.fidelity_channels:
-            for stim_rec in [x for x in srec.recordings if 'Fidelity' in x.device_type]:
-                #for post_rec in rec.recording_channels:
-                for post_rec in [x for x in srec.recordings if 'MultiClamp 700' in x.device_type]:
-                    #if pre_dev == post_dev:
-                    #    continue
-                    stim_num = stim_rec.meta['notebook']['USER_stim_num']
-                    if stim_num is None:
+            unmatched = 0
+            osra = OptoSyncRecAnalyzer.get(srec)
+            for stim_rec in srec.recordings:
+                if stim_rec.device_type in ['Prairie_Command', 'unknown']: ### these don't actually contain data we want to use -- ignore them
+                    continue
+                if isinstance(stim_rec, PatchClampRecording):
+                    ### exclude trying to analyze intrinsic pulses
+                    stim_name = stim_rec.stimulus.description
+                    if any(substr in stim_name for substr in ['intrins']):
                         continue
+
+                for post_rec in [x for x in srec.recordings if isinstance(x, PatchClampRecording)]:
+                    if stim_rec == post_rec:
+                        continue
+
+                    if 'Fidelity' in stim_rec.device_type:
+                        stim_num = stim_rec.meta['notebook']['USER_stim_num']
+                        if stim_num is None: ## happens when last sweep records a voltage offset - used to be labelled as 'unknown' device
+                            continue
                         
-                    stim = stim_log[str(int(stim_num))]
-                    pre_cell_name = str(stim['stimulationPoint']['name'])
+                        stim = stim_log[str(int(stim_num))]
+                        if stim_log_version == 0:
+                            pre_cell_name = 'Point %i' % stim['stimulationPoint'] 
+                        else:
+                            pre_cell_name = stim['stimulationPoint']['name']
 
-                    post_cell_name = str('electrode_'+ str(post_rec.device_id))
+                        post_cell_name = str('electrode_'+ str(post_rec.device_id))
 
-                    pair_entry = pairs_by_cell_id.get((pre_cell_name, post_cell_name))
+                        pair_entry = pairs_by_cell_id.get((pre_cell_name, post_cell_name))
+
+                    elif 'led' in stim_rec.device_type.lower():
+                        pair_entry = None
+
+                    elif isinstance(stim_rec, PatchClampRecording):
+                        pre_cell_name = str('electrode_' + str(stim_rec.device_id))
+                        post_cell_name = str('electrode_'+ str(post_rec.device_id))
+                        pair_entry = pairs_by_cell_id.get((pre_cell_name, post_cell_name))
 
                     # get all responses, regardless of the presence of a spike
-                    responses = osra.get_photostim_responses(stim_rec, post_rec)
+                    responses = osra.get_responses(stim_rec, post_rec)
+                    if len(responses) > 10:
+                        raise Exception('Found more than 10 pulse responses for %s. Please investigate.'%srec)
                     for resp in responses:
-                        if pair_entry is not None: ### when recordings are crappy cells are not always included in connections files so won't exist as pairs in the db
+                        if pair_entry is not None: ### when recordings are crappy cells are not always included in connections files so won't exist as pairs in the db, also led stimulations don't have pairs
                             if resp['ex_qc_pass']:
                                 pair_entry.n_ex_test_spikes += 1
                             if resp['in_qc_pass']:
@@ -331,33 +393,51 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         )
                         session.add(resp_entry)
 
-            # generate up to 20 baseline snippets for each recording
-            #for dev in srec.recording_channels:
-            for dev in [x for x in srec.recordings if 'MultiClamp 700' in x.device_type]:
-                rec = srec[dev.device_id]
-                dist = OptoBaselineAnalyzer.get(rec)
-                for i in range(20):
-                    base = dist.get_baseline_chunk(20e-3)
-                    if base is None:
-                        # all out!
-                        break
-                    start, stop = base
-                    #raise Exception('stop')
-                    data = rec['primary'].time_slice(start, stop).resample(sample_rate=20000).data
+                        # find a baseline chunk from this recording with compatible qc metrics
+                        got_baseline = False
+                        for i, (start, stop) in enumerate(baseline_chunks[stim_rec.device_id, post_rec.device_id]):
+                            key = (post_rec.device_id, start, stop)
 
-                    ex_qc_pass, in_qc_pass, qc_failures = qc.opto_pulse_response_qc_pass(rec, [start, stop])
+                            # pull data and run qc if needed
+                            if key not in baseline_qc_cache:
+                                data = post_rec['primary'].time_slice(start, stop).resample(sample_rate=db.default_sample_rate).data
+                                ex_qc_pass, in_qc_pass, qc_failures = qc.opto_pulse_response_qc_pass(post_rec, [start, stop])
+                                baseline_qc_cache[key] = (data, ex_qc_pass, in_qc_pass)
+                            else:
+                                (data, ex_qc_pass, in_qc_pass) = baseline_qc_cache[key]
 
-                    base_entry = db.Baseline(
-                        recording=rec_entries[dev.device_id],
-                        data=data,
-                        data_start_time=start,
-                        mode=float_mode(data),
-                        ex_qc_pass=ex_qc_pass,
-                        in_qc_pass=in_qc_pass,
-                        meta=None if ex_qc_pass is True and in_qc_pass is True else {'qc_failures': qc_failures},
-                    )
-                    session.add(base_entry)
+                            if resp_entry.ex_qc_pass is True and ex_qc_pass is not True:
+                                continue
+                            elif resp_entry.in_qc_pass is True and in_qc_pass is not True:
+                                continue
+                            else:
+                                got_baseline = True
+                                baseline_chunks[stim_rec.device_id, post_rec.device_id].pop(i)
+                                break
 
+                        if not got_baseline:
+                            # no matching baseline available
+                            unmatched += 1
+                            continue
+
+                        if key not in baseline_entry_cache:
+                            # create a db record for this baseline chunk if it has not already appeared elsewhere
+                            base_entry = db.Baseline(
+                                recording=rec_entries[post_rec.device_id],
+                                data=data,
+                                data_start_time=start,
+                                mode=float_mode(data),
+                                ex_qc_pass=ex_qc_pass,
+                                in_qc_pass=in_qc_pass,
+                                meta=None if ex_qc_pass is True and in_qc_pass is True else {'qc_failures': qc_failures},
+                            )
+                            session.add(base_entry)
+                            baseline_entry_cache[key] = base_entry
+                        
+                        resp_entry.baseline = baseline_entry_cache[key]
+
+            if unmatched > 0:
+                print("%s %s: %d pulse responses without matched baselines" % (job_id, srec, unmatched))
 
     def job_records(self, job_ids, session):
         """Return a list of records associated with a list of job IDs.

@@ -5,26 +5,25 @@ For generating a DB table describing cell morphology.
 """
 from __future__ import print_function, division
 
-import os, datetime, hashlib
+import os, datetime, hashlib, json
+from sqlalchemy.orm import joinedload
 from collections import OrderedDict
 from ...util import timestamp_to_datetime, optional_import
 from ...data.pipette_metadata import PipetteMetadata
 from ... import config, lims
 from .pipeline_module import MultipatchPipelineModule
 from .experiment import ExperimentPipelineModule
-pyodbc = optional_import('pyodbc')
 
 
 col_names = {
-                'Qual_Morpho_Type': {'name': 'qual_morpho_type', 'type': 'str'},
-                'dendrite_type': {'name': 'dendrite_type', 'type': ['spiny', 'aspiny', 'sparsely spiny', 'NEI']},
-                'Apical_truncation_distance': {'name': 'apical_trunc_distance', 'type': 'float'},
-                'Axon_truncation_distance': {'name': 'axon_trunc_distance', 'type': 'float'},
-                'Axon origination': {'name': 'axon_origin', 'type': ['soma', 'dendrite', 'unclear', 'NEI']},
-                'Axon_truncation': {'name': 'axon_truncation', 'type': ['truncated', 'borderline', 'intact', 'unclear', 'NEI']},
-                'Apical_truncation': {'name': 'apical_truncation', 'type': ['truncated', 'borderline', 'intact','unclear', 'NEI']},
-
-            }
+    'Qual_Morpho_Type': {'name': 'qual_morpho_type', 'type': 'str'},
+    'dendrite_type': {'name': 'dendrite_type', 'type': ['spiny', 'aspiny', 'sparsely spiny', 'NEI']},
+    'Apical_truncation_distance': {'name': 'apical_trunc_distance', 'type': 'float'},
+    'Axon_truncation_distance': {'name': 'axon_trunc_distance', 'type': 'float'},
+    'Axon origination': {'name': 'axon_origin', 'type': ['soma', 'dendrite', 'unclear', 'NEI']},
+    'Axon_truncation': {'name': 'axon_truncation', 'type': ['truncated', 'borderline', 'intact', 'unclear', 'NEI']},
+    'Apical_truncation': {'name': 'apical_truncation', 'type': ['truncated', 'borderline', 'intact','unclear', 'NEI']},
+}
 
 
 class MorphologyPipelineModule(MultipatchPipelineModule):
@@ -42,6 +41,7 @@ class MorphologyPipelineModule(MultipatchPipelineModule):
         # Load experiment from DB
         expt = db.experiment_from_timestamp(job_id, session=session)
         morpho_results = morpho_db()
+        lims_layers = get_lims_layers() 
         
         path = os.path.join(config.synphys_data, expt.storage_path)
         pip_meta = PipetteMetadata(path)
@@ -51,12 +51,7 @@ class MorphologyPipelineModule(MultipatchPipelineModule):
             user_morpho = pip_meta.pipettes[cell.ext_id].get('morphology')
             cell_specimen_id = cell.meta.get('lims_specimen_id')
             cell_morpho = morpho_results.get(cell_specimen_id)
-            if cell_specimen_id is not None:
-                cortical_layer = lims.cell_layer(cell_specimen_id)
-                if cortical_layer is not None:
-                    cortical_layer = cortical_layer.lstrip('Layer')
-            else:
-                cortical_layer = None
+            cortical_layer = lims_layers.get(cell_specimen_id, None)
 
             if user_morpho in (None, ''):
                 pyramidal = None
@@ -69,17 +64,16 @@ class MorphologyPipelineModule(MultipatchPipelineModule):
             results = {
                 'pyramidal': pyramidal,
                 'cortical_layer': cortical_layer,
-                'morpho_db_hash': None,
-
             }
             
-            if cell_morpho is not None:
-                morpho_db_hash = hashlib.md5((';'.join(filter(None, cell_morpho))).encode()).hexdigest()
-                results['morpho_db_hash'] = morpho_db_hash
+            morpho_db_hash = hash_record([cell_morpho, cortical_layer])
+            results['meta'] = {'morpho_db_hash': morpho_db_hash}
+            
+            if cell_morpho is not None:  
                 for morpho_db_name, result in col_names.items():
                     col_name = result['name']
                     col_type = result['type']
-                    data = getattr(cell_morpho, morpho_db_name)
+                    data = cell_morpho[morpho_db_name]
                     if data is not None:
                         if isinstance(col_type, list):
                             d = [t for t in col_type if t == data]
@@ -96,6 +90,18 @@ class MorphologyPipelineModule(MultipatchPipelineModule):
 
             # Write new record to DB
             morphology = db.Morphology(cell_id=cell.id, **results)
+            
+            # Update cell_class_nonsynaptic
+            #  (cell_class gets updated later)
+            dtype = results.get('dendrite_type', None)
+            morpho_class = {'spiny': 'ex', 'aspiny': 'in', 'sparsely spiny': 'in'}.get(dtype, None)
+            cell_meta = cell.meta.copy()
+            cell_meta['morpho_cell_class'] = morpho_class
+            cell.meta = cell_meta
+
+            # this gets updated again in later modules
+            cell.cell_class, cell.cell_class_nonsynaptic = cell._infer_cell_classes()
+                
             session.add(morphology)
         
     def job_records(self, job_ids, session):
@@ -127,42 +133,71 @@ class MorphologyPipelineModule(MultipatchPipelineModule):
         except ImportError as exc:
             print("Skipping morphology: %s" % str(exc))
             return ready
-
+        lims_layers = get_lims_layers()
+            
         for expt_id, (expt_mtime, success) in expts.items():
             if success is not True:
                 continue
 
-            expt = session.query(db.Experiment).filter(db.Experiment.ext_id==expt_id).all()[0]
+            q = session.query(db.Experiment)
+            # joinedload should speed up access to cell/morpho attributes by eager loading along with the experiment
+            q = q.options(joinedload(db.Experiment.cell_list).joinedload(db.Cell.morphology))
+            q = q.filter(db.Experiment.ext_id==expt_id)
+            expt = q.all()[0]
+
             ready[expt_id] = {'dep_time': expt_mtime}
-            cluster = expt.meta.get('lims_cell_cluster_id')
-            if cluster is None:
-                continue
-            cluster_cells = lims.cluster_cells(cluster)
-            if cluster_cells is None:
-                continue
-            cell_hash_compare = []
-            for cell in cluster_cells:
-                if cell.id is None:
-                    continue
-                morpho_db_hash = hashlib.md5((';'.join(filter(None, morpho_results.get(cell.id, [None])))).encode()).hexdigest()
-                cell_morpho_rec = session.query(db.Morphology).join(db.Cell).filter(db.Cell.meta.info.get('lims_specimen_id')==str(cell.id)).all()
-                if len(cell_morpho_rec) == 1:   
-                    cell_rec_hash = cell_morpho_rec[0].morpho_db_hash
-                    cell_hash_compare.append(morpho_db_hash == cell_rec_hash)
-                else:
-                    cell_hash_compare.append(False)
-            if all(cell_hash_compare) is False:
+            needs_update = False
+            for cell_ext_id, cell in expt.cells.items():
+                if cell.morphology is None:
+                    needs_update = True
+                    break
+                cell_specimen_id = cell.meta.get('lims_specimen_id')
+                morpho_rec = morpho_results.get(cell_specimen_id, None)
+                cortical_layer = lims_layers.get(cell_specimen_id, None)
+                morpho_db_hash = hash_record([morpho_rec, cortical_layer])
+                prev_hash = None if cell.morphology.meta is None else cell.morphology.meta['morpho_db_hash']
+                if morpho_db_hash != prev_hash:
+                    needs_update = True
+                    break
+
+            if needs_update:        
                 ready[expt_id] = {'dep_time': datetime.datetime.now()}
         
         return ready
 
 
-def morpho_db():
+def hash_record(rec):
+    return hashlib.md5(repr(rec).encode()).hexdigest()
+
+def import_morpho_db():
+    import pyodbc
     cnxn_str = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)}; DBQ=%s' % config.morpho_address
     cnxn = pyodbc.connect(cnxn_str)
     cursor = cnxn.cursor()
     morpho_table = cursor.execute('select * from MPATCH_CellsofCluster')
     results = morpho_table.fetchall()
-    morpho_results = {int(r.cell_specimen_id): r for r in results}
-
+    fields = [r[0] for r in results[0].cursor_description]
+    morpho_results = {int(r.cell_specimen_id): {k:getattr(r, k) for k in fields} for r in results}
+    
     return morpho_results
+
+morpho_cache = None
+def morpho_db():
+    global morpho_cache
+    if morpho_cache is None:
+        if hasattr(config, 'morpho_address'):
+            morpho_cache = import_morpho_db()
+        else:
+            # json requires string keys, so we have to convert back to int here:
+            morpho_cache = {int(k):v for k,v in json.load(open(config.morpho_json_file)).items()}
+    
+    return morpho_cache
+
+lims_cache = None
+def get_lims_layers():
+    global lims_cache
+    if lims_cache is None:
+        lims_q = lims.all_cell_layers()
+        lims_cache = {spec_id:layer.lstrip('Layer') for layer, spec_id in lims_q if layer is not None}
+
+    return lims_cache
