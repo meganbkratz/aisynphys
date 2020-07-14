@@ -13,6 +13,7 @@ from neuroanalysis.fitting import Psp, StackedPsp
 from neuroanalysis.ui.fitting import FitExplorer
 
 from aisynphys.ui.experiment_browser import ExperimentBrowser
+from aisynphys.ui.experiment_selector import ExperimentSelector
 from aisynphys.avg_response_fit import get_pair_avg_fits, response_query, sort_responses
 from aisynphys.database import default_db as db
 import aisynphys.data.data_notes_db as notes_db
@@ -52,11 +53,13 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         pg.QtGui.QWidget.__init__(self)
         self.default_session = default_session
         self.notes_session = notes_session
+
         self.layout = pg.QtGui.QGridLayout()
+        self.layout.setContentsMargins(3,3,3,3)
         self.setLayout(self.layout)
         self.h_splitter = pg.QtGui.QSplitter()
         self.h_splitter.setOrientation(pg.QtCore.Qt.Horizontal)
-        self.pair_analyzer = PairAnalysis()
+        self.pair_analyzer = MultipatchPairAnalysis()
         self.fit_explorer = None
         self.ctrl_panel = self.pair_analyzer.ctrl_panel
         self.user_params = self.ctrl_panel.user_params
@@ -68,31 +71,33 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         self.fit_ptree = ptree.ParameterTree(showHeader=False)
         self.fit_ptree.addParameters(self.output_params, showTop=False)
         self.save_btn = pg.FeedbackButton('Save Analysis')
-        self.expt_btn = pg.QtGui.QPushButton('Set Experiments')
+        #self.expt_btn = pg.QtGui.QPushButton('Set Experiments')
         self.fit_btn = pg.QtGui.QPushButton('Fit Responses')
         self.ic_plot = self.pair_analyzer.ic_plot
         self.vc_plot = self.pair_analyzer.vc_plot
-        self.select_ptree = ptree.ParameterTree(showHeader=False)
-        self.hash_select = Parameter.create(name='Hashtags', type='group', children=
-            [{'name': 'With multiple selected:', 'type': 'list', 'values': ['Include if any appear', 'Include if all appear'], 'value': 'Include if any appear'}]+
-            [{'name': '#', 'type': 'bool'}] +
-            [{'name': ht, 'type': 'bool'} for ht in comment_hashtag[1:]])
-        self.rigs = db.query(db.Experiment.rig_name).distinct().all()
-        self.operators = db.query(db.Experiment.operator_name).distinct().all()
-        self.rig_select = Parameter.create(name='Rig', type='group', children=[{'name': rig[0], 'type': 'bool'} for rig in self.rigs])
-        self.operator_select = Parameter.create(name='Operator', type='group', children=[{'name': operator[0], 'type': 'bool'} for operator in self.operators])
-        self.data_type = Parameter.create(name='Reduce data to:', type='group', children=[
-            {'name': 'Pairs with data', 'type': 'bool', 'value': True},
-            {'name': 'Synapse is None', 'type': 'bool'}])
-        [self.select_ptree.addParameters(param) for param in [self.data_type, self.rig_select, self.operator_select, self.hash_select]]
-        self.experiment_browser = self.pair_analyzer.experiment_browser
+        #self.select_ptree = ptree.ParameterTree(showHeader=False)
+        #self.hash_select = Parameter.create(name='Hashtags', type='group', children=
+        #    [{'name': 'With multiple selected:', 'type': 'list', 'values': ['Include if any appear', 'Include if all appear'], 'value': 'Include if any appear'}]+
+        #    [{'name': '#', 'type': 'bool'}] +
+        #    [{'name': ht, 'type': 'bool'} for ht in comment_hashtag[1:]])
+        #self.rigs = db.query(db.Experiment.rig_name).distinct().all()
+        #self.operators = db.query(db.Experiment.operator_name).distinct().all()
+        #self.rig_select = Parameter.create(name='Rig', type='group', children=[{'name': str(rig[0]), 'type': 'bool'} for rig in self.rigs])
+        #self.operator_select = Parameter.create(name='Operator', type='group', children=[{'name': str(operator[0]), 'type': 'bool'} for operator in self.operators])
+        #self.data_type = Parameter.create(name='Reduce data to:', type='group', children=[
+        #    {'name': 'Pairs with data', 'type': 'bool', 'value': True},
+        #    {'name': 'Synapse is None', 'type': 'bool'}])
+        #[self.select_ptree.addParameters(param) for param in [self.data_type, self.rig_select, self.operator_select, self.hash_select]]
+        self.experiment_browser = ExperimentBrowser()
         self.v_splitter = pg.QtGui.QSplitter()
         self.v_splitter.setOrientation(pg.QtCore.Qt.Vertical)
-        self.expt_splitter = pg.QtGui.QSplitter()
-        self.expt_splitter.setOrientation(pg.QtCore.Qt.Vertical)
-        self.h_splitter.addWidget(self.expt_splitter)
-        self.expt_splitter.addWidget(self.select_ptree)
-        self.expt_splitter.addWidget(self.expt_btn)
+        self.expt_selector = ExperimentSelector(default_session, notes_session, hashtags=comment_hashtag)
+        #self.expt_splitter = pg.QtGui.QSplitter()
+        #self.expt_splitter.setOrientation(pg.QtCore.Qt.Vertical)
+        #self.h_splitter.addWidget(self.expt_splitter)
+        #self.expt_splitter.addWidget(self.select_ptree)
+        #self.expt_splitter.addWidget(self.expt_btn)
+        self.h_splitter.addWidget(self.expt_selector)
         self.h_splitter.addWidget(self.v_splitter)
         self.v_splitter.addWidget(self.experiment_browser)
         self.v_splitter.addWidget(self.ptree)
@@ -121,7 +126,8 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
         # self.next_pair_button.clicked.connect(self.load_next_pair)
         self.experiment_browser.itemSelectionChanged.connect(self.selected_pair)
         self.save_btn.clicked.connect(self.save_to_db)
-        self.expt_btn.clicked.connect(self.get_expts)
+        #self.expt_btn.clicked.connect(self.get_expts)
+        self.expt_selector.sigNewExperimentsRetrieved.connect(self.set_expts)
         self.fit_btn.clicked.connect(self.pair_analyzer.fit_response_update)
 
     def save_to_db(self):
@@ -132,62 +138,10 @@ class PairAnalysisWindow(pg.QtGui.QWidget):
             self.save_btn.failure()
             raise
 
-    def get_expts(self):
-        expt_query = db.query(db.Experiment)
-        synapse_none = self.data_type['Synapse is None']
-        if synapse_none:
-            subquery = db.query(db.Pair.experiment_id).filter(db.Pair.has_synapse==None).subquery()
-            expt_query = expt_query.filter(db.Experiment.id.in_(subquery))
-        selected_rigs = [rig.name() for rig in self.rig_select.children() if rig.value() is True]
-        if len(selected_rigs) != 0:
-            expt_query = expt_query.filter(db.Experiment.rig_name.in_(selected_rigs))
-        selected_operators = [operator.name() for operator in self.operator_select.children() if operator.value()is True]
-        if len(selected_operators) != 0:
-            expt_query = expt_query.filter(db.Experiment.operator_name.in_(selected_operators))
-        selected_hashtags = [ht.name() for ht in self.hash_select.children()[1:] if ht.value() is True]
-        if len(selected_hashtags) != 0:
-            timestamps = self.get_expts_hashtag(selected_hashtags)
-            expt_query = expt_query.filter(db.Experiment.ext_id.in_(timestamps))
-        expts = expt_query.all()
-        self.set_expts(expts)
-
-    def get_expts_hashtag(self, selected_hashtags):
-        q = self.notes_session.query(notes_db.PairNotes)
-        pairs_to_include = []
-        note_pairs = q.all()
-        note_pairs.sort(key=lambda p: p.expt_id)
-        for p in note_pairs:
-            comments = p.notes.get('comments')
-            if comments is None:
-                continue    
-            if len(selected_hashtags) == 1:
-                hashtag = selected_hashtags[0]
-                if hashtag == '#':
-                    if hashtag in comments and all([ht not in comments for ht in comment_hashtag[1:]]):
-                        print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
-                        pairs_to_include.append(p)
-                else:
-                    if hashtag in comments:
-                        print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
-                        pairs_to_include.append(p)
-                
-            if len(selected_hashtags) > 1:
-                hashtag_present = [ht in comments for ht in selected_hashtags]
-                or_expts = self.hash_select['With multiple selected:'] == 'Include if any appear'
-                and_expts = self.hash_select['With multiple selected:'] == 'Include if all appear'
-                if or_expts and any(hashtag_present):
-                    print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
-                    pairs_to_include.append(p)
-                if and_expts and all(hashtag_present):
-                    print(p.expt_id, p.pre_cell_id, p.post_cell_id, comments)
-                    pairs_to_include.append(p)
-
-        return set([pair.expt_id for pair in pairs_to_include])
-
     def set_expts(self, expts):
         with pg.BusyCursor():
             self.experiment_browser.clear()
-            has_data = self.data_type['Pairs with data']
+            has_data = self.expt_selector.data_type['Pairs with data']
             if not has_data:
                 self.experiment_browser.populate(experiments=expts, all_pairs=True)
             else:
@@ -231,6 +185,7 @@ class ControlPanel(object):
         self.user_latency = Parameter.create(name='User Latency', type='float', suffix='s', siPrefix=True, dec=True, value=default_latency)
         self.synapse = Parameter.create(name='Synapse call', type='list', values={'Excitatory': 'ex', 'Inhibitory': 'in', 'None': None})
         self.gap = Parameter.create(name='Gap junction call', type='bool')
+        
         fit_cat = ['-55 VC', '-70 VC', '-55 IC', '-70 IC']
         fit_param = [
             {'name': c, 'type': 'group', 'children': [
@@ -240,6 +195,7 @@ class ControlPanel(object):
             ]} for c in fit_cat
         ]
         self.fit_params = Parameter.create(name='Fit parameters', type='group', children=fit_param)
+
         self.warn_param = Parameter.create(name='Warnings', type='text', readonly=True)
         self.comments = Parameter.create(name='Comments', type='group', children=[
             {'name': 'Hashtag', 'type': 'list', 'values': comment_hashtag, 'value': ''},
@@ -257,6 +213,17 @@ class ControlPanel(object):
         ])
 
         self.comments.child('Hashtag').sigValueChanged.connect(self.add_text_to_comments)
+
+    def create_new_fit_params(self, catagory_names):
+        self.fit_params.clearChildren()
+        fit_params = [
+            {'name': c, 'type': 'group', 'children': [
+                {'name': 'Parameter:', 'type': 'str', 'readonly': True, 'value': 'Amplitude, Latency, Rise time, Decay tau, NRMSE'},
+                {'name': 'Value:', 'type': 'str', 'readonly': True},
+                {'name': 'Fit Pass', 'type': 'bool'},
+            ]} for c in catagory_names]
+        for i, p in enumerate(fit_params):
+            self.fit_params.insertChild(i, p)
 
     def add_text_to_comments(self):
         text = self.comments['Hashtag']
@@ -283,6 +250,16 @@ class ControlPanel(object):
                 if fit_pass:
                     group.child('Fit Pass').setValue(False)
 
+    def update_fit_param(self, key, values):
+        param_names = ['amp', 'xoffset', 'rise_time', 'decay_tau', 'nrmse']
+        if key[0] == 'vc':
+            suffix = ['A', 's', 's', 's', '']
+        elif key[0] == 'ic':
+            suffix = ['V', 's', 's', 's', '']
+
+        group = self.output_params.child('Fit parameters', str(key))
+        formatted_values = self.format_fit_output(values, param_names, suffix)
+        group.child('Value:').setValue(formatted_values)
 
     def format_fit_output(self, values, name, suffix):
         format_list = []
@@ -460,8 +437,14 @@ class SuperLine(pg.QtCore.QObject):
         value = ctrl_panel.value()
         self.set_value(value, block_fit=True)
 
+    def clear_lines(self):
+        for l in self.lines:
+            l.scene().removeItem(l)
+        self.lines = []
 
-class PairAnalysis(object):
+
+
+class MultipatchPairAnalysis(object):
     def __init__(self):
         self.ctrl_panel = ControlPanel()
         
@@ -480,7 +463,7 @@ class PairAnalysis(object):
         self.user_latency.sigValueChanged.connect(self.latency_superline.set_value_from_ctrl_panel)
             
         self.ctrl_panel.output_params.child('Fit parameters').sigTreeStateChanged.connect(self.colorize_fit)
-        self.experiment_browser = ExperimentBrowser()
+        #self.experiment_browser = ExperimentBrowser()
         self.fit_compare = pg.DiffTreeWidget()
         self.meta_compare = pg.DiffTreeWidget()
         self.nrmse_thresh = 4
@@ -811,41 +794,3 @@ class PairAnalysis(object):
                     if mode == 'ic':
                         self.ic_plot.plot_fit(fit_tseries, holding, fit_pass=fit_pass)            
 
-
-
-if __name__ == '__main__':
-    app = pg.mkQApp()
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--timestamps', type=str, nargs='*')
-    parser.add_argument('--dbg', default=False, action='store_true')
-    parser.add_argument('expt_id', type=str, nargs='?', default=None)
-    parser.add_argument('pre_cell_id', type=str, nargs='?', default=None)
-    parser.add_argument('post_cell_id', type=str, nargs='?', default=None)
-
-    args = parser.parse_args(sys.argv[1:])
-
-    if args.dbg:
-        pg.dbg()
-
-    default_session = db.session()
-    notes_session = notes_db.db.session()
-    # timestamps = [r.acq_timestamp for r in db.query(db.Experiment.acq_timestamp).all()]
-    timestamps = []
-    
-    mw = MainWindow(default_session, notes_session)
-    if args.timestamps is not None:
-        timestamps = args.timestamps
-    elif args.expt_id is not None:
-        timestamps = [args.expt_id]
-    
-    q = default_session.query(db.Experiment).filter(db.Experiment.acq_timestamp.in_(timestamps))
-    expts = q.all()
-    mw.set_expts(expts)
-
-    if None not in (args.expt_id, args.pre_cell_id, args.post_cell_id):
-        expt = db.experiment_from_ext_id(args.expt_id)
-        pair = expt.pairs[args.pre_cell_id, args.post_cell_id]
-        mw.experiment_browser.select_pair(pair.id)
-
-    if sys.flags.interactive == 0:
-        app.exec_()
