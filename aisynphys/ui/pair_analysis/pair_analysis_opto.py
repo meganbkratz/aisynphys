@@ -275,8 +275,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         param.child('status').setValue('done')
         param.child('number_of_events').setValue(str(result['n_events']))
         param.child('number_of_events').show()
-        param.child('user_passed_fit').setValue(str(result['fit_pass']))
-        param.child('user_passed_fit').show()
+        if result['n_events'] > 0:
+            param.child('user_passed_fit').setValue(str(result['fit_pass']))
+            param.child('user_passed_fit').show()
 
         param.fit = result['fit']
         param.event_times = result['event_times']
@@ -604,9 +605,15 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         # plot.addItem(pg.VTickGroup(event_times, (0.7, 1)))
 
     def add_analysis_btn_clicked(self):
+        if len(event_params.children()) == 0:
+            fit = None
+            fit_pass = None
+        else:
+            fit = self.current_fit
+            fit_pass = self.event_params.chile('event_0')['Fit Pass']
         res = {'category_name':self.key,
-               'fit': self.current_fit,
-               'fit_pass':self.event_params.child('event_0')['Fit Pass'],
+               'fit': fit,
+               'fit_pass':fit_pass,
                'n_events':len(self.event_params.children()),
                'event_times':[p['user_latency'] for p in self.event_params.children()]}
         self.sigNewAnalysisAvailable.emit(res)
