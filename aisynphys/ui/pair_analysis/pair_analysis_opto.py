@@ -235,16 +235,20 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             holding = pr.recording.patch_clamp_recording.baseline_potential
             power = pr.stim_pulse.meta.get('pockel_cmd')
 
+            offset_distance = pr.stim_pulse.meta.get('offset_distance', 0)
+            if offset_distance is None: ## early photostimlogs didn't record the offset between the stimulation plane and the cell
+                offset_distance = 0
+
             if in_limits1[0] <= holding < in_limits1[1]:
-                qc_pass = qc[pr.in_qc_pass and pr.stim_pulse.meta.get('offset_distance', 0) < distance_limit]
+                qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
                 sorted_responses[(clamp_mode, -55, power)][qc_pass].append(pr)
 
             elif in_limits2[0] <= holding < in_limits2[1]:
-                qc_pass = qc[pr.in_qc_pass and pr.stim_pulse.meta.get('offset_distance', 0) < distance_limit]
+                qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
                 sorted_responses[(clamp_mode, 0, power)][qc_pass].append(pr)
 
             elif ex_limits[0] <= holding < ex_limits[1]:
-                qc_pass = qc[pr.ex_qc_pass and pr.stim_pulse.meta.get('offset_distance', 0) < distance_limit]
+                qc_pass = qc[pr.ex_qc_pass and offset_distance < distance_limit]
                 sorted_responses[(clamp_mode, -70, power)][qc_pass].append(pr)
 
         return sorted_responses
