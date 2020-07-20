@@ -53,7 +53,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         self.ptree = pg.parametertree.ParameterTree(showHeader=False)
         self.pair_param = pg.parametertree.Parameter.create(name='Current Pair', type='str', readonly=True)
-        self.pair_param.addChild({'name':'Synapse call', 'type':'list', 'values':{'Excitatory': 'ex', 'Inhibitory': 'in', 'None': None}})
+        self.pair_param.addChild({'name':'Synapse call', 'type':'list', 'values':{'':'not specified', 'Excitatory': 'ex', 'Inhibitory': 'in', 'None': None, "TBD":'tbd'}, 'value':''})
         self.pair_param.addChild({'name':'Gap junction call', 'type':'bool'})
         self.ptree.addParameters(self.pair_param)
         #self.category_param = pg.parametertree.Parameter.create(name='Categories', type='group')
@@ -157,13 +157,13 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                 self.load_saved_fit(record)
             self.selectTabWidget.setCurrentIndex(2)
 
-    def synapse_call_changed(self):
-        value = self.ctrl_panel.synapse.value()
-        if value is None:
-            self.fit_btn.setEnabled(False)
-            ## probably also need to clear fit parameter items and plot items here
-        else:
-            self.fit_btn.setEnabled(True)
+    # def synapse_call_changed(self):
+    #     value = self.ctrl_panel.synapse.value()
+    #     if value is None:
+    #         self.fit_btn.setEnabled(False)
+    #         ## probably also need to clear fit parameter items and plot items here
+    #     else:
+    #         self.fit_btn.setEnabled(True)
 
     def add_text_to_comments(self):
         text = self.comment_param['Hashtag']
@@ -184,7 +184,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             if pair.has_synapse is True and pair.synapse is not None:
                 synapse_type = pair.synapse.synapse_type
             else:
-                synapse_type = None
+                synapse_type = 'not specified'
 
             self.pair_param.child('Synapse call').setValue(synapse_type)
             self.pair_param.child('Gap junction call').setValue(pair.has_electrical)
@@ -263,9 +263,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.analyzers[key] = ResponseAnalyzer(host=self, key=key)
             self.analyzerTabWidget.addTab(self.analyzers[key], str(key))
             self.category_param.addChild({'name':str(key), 'type':'group', 'children':[
-                {'name':'status', 'type':'str', 'value': 'not analyzed', 'readOnly':True},
-                {'name':'number_of_events', 'type':'str', 'readOnly':True, 'visible':False},
-                {'name':'user_passed_fit', 'type':'str', 'readOnly':True, 'visible':False}
+                {'name':'status', 'type':'str', 'value': 'not analyzed', 'readonly':True},
+                {'name':'number_of_events', 'type':'str', 'readonly':True, 'visible':False},
+                {'name':'user_passed_fit', 'type':'str', 'readonly':True, 'visible':False}
                 ]})
             self.analyzers[key].sigNewAnalysisAvailable.connect(self.got_new_analysis)
 
@@ -285,6 +285,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         param.fit = result['fit']
         param.event_times = result['event_times']
+        param.initial_params = result['initial_params']
 
     def plot_responses(self):        
         for i, key in enumerate(self.sorted_responses.keys()):
@@ -298,30 +299,41 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.warnings = None
 
     def save_to_db(self):
-        raise Exception('saving to db is not implemented yet.')
 
-        fit_pass = {}
-        for key in self.sorted_responses.keys():
-            fit_pass[key] = self.ctrl_panel.output_params['Fit parameters', str(key), 'Fit Pass']
+        synapse_call = self.pair_param['Synapse call']
+        if synapse_call == 'not specified':
+            raise Exception("Please make a synapse call before saving to db.")
+
+        #fit_pass = {}
+        #for key in self.sorted_responses.keys():
+        #    fit_pass[key] = self.ctrl_panel.output_params['Fit parameters', str(key), 'Fit Pass']
 
         expt_id = self.pair.experiment.ext_id
         pre_cell_id = self.pair.pre_cell.ext_id
         post_cell_id = self.pair.post_cell.ext_id
         meta = {
-            'expt_id': expt_id,
-            'pre_cell_id': pre_cell_id,
-            'post_cell_id': post_cell_id,
-            'synapse_type': self.ctrl_panel.user_params['Synapse call'],
-            'gap_junction': self.ctrl_panel.user_params['Gap junction call'],
-            'comments': self.ctrl_panel.output_params['Comments', ''],
+            'expt_id': self.pair.experiment.ext_id,
+            'pre_cell_id': self.pair.pre_cell.ext_id,
+            'post_cell_id': self.pair.post_cell.ext_id,
+            'synapse_type': synapse_call,
+            'gap_junction': self.pair_param['Gap junction call'],
+            'comments': self.comment_param[''],
+            'categories':{str(key):None for key in self.sorted_responses.keys()}
         }
 
-        if self.ctrl_panel.user_params['Synapse call'] is not None:
-            meta.update({
-            'fit_parameters': self.fit_params,
-            'fit_pass': fit_pass,
-            'fit_warnings': self.warnings,
-            })
+        if synapse_call is not None:
+            for key in self.sorted_responses.keys():
+                param = self.category_param.child(str(key))
+                if param['status'] == 'done':
+                    meta['categories'][str(key)]={
+                        'initial_parameters':param.initial_params,
+                        'fit_parameters': param.fit.values,
+                        'fit_pass': param['user_passed_fit'],
+                        'n_events': param['number_of_events'],
+                        'event_times':param.event_times
+                        }
+                else:
+                    meta['comments'] += 'Skipped analysis of %s.\n'%str(key)
         
         session = notes_db.db.session(readonly=False)
         record = notes_db.get_pair_notes_record(expt_id, pre_cell_id, post_cell_id, session=session)
@@ -337,7 +349,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             session.add(entry)
             session.commit()
         else:
-            self.print_pair_notes(meta, record)
+            #self.print_pair_notes(meta, record)
             msg = pg.QtGui.QMessageBox.question(None, "Pair Analysis", 
                 "The record you are about to save conflicts with what is in the Pair Notes database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?",
                 pg.QtGui.QMessageBox.Yes | pg.QtGui.QMessageBox.No)
@@ -530,7 +542,8 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             peak_time = filtered.time_at(peak_ind)
             rise_time = peak_time-(latency+x)
             amp = filtered.value_at(peak_time) - filtered.value_at(latency+x)
-            fit = fit_psp(filtered, (window[0]+x, window[1]+x), self.clamp_mode, sign=0, exp_baseline=False, init_params={'rise_time':rise_time, 'amp':amp}, fine_search_spacing=filtered.dt, fine_search_window_width=100e-6)
+            init_params = {'rise_time':rise_time, 'amp':amp}
+            fit = fit_psp(filtered, (window[0]+x, window[1]+x), self.clamp_mode, sign=0, exp_baseline=False, init_params=init_params, fine_search_spacing=filtered.dt, fine_search_window_width=100e-6)
             #fit=fit_psp(filtered, (window[0]+x, window[1]+x), self.clamp_mode, sign=0, exp_baseline=False)
             #print('init_rise_time:%f, init_amp:%f, tau:%f, x:%f, rise:%s, amp:%s'%(rise_time, amp, fit.values['decay_tau'], fit.values['xoffset'], fit.values['rise_time'], fit.values['amp']))
             fits[x] = fit
@@ -550,6 +563,8 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         if hasattr(event_param, '_fit_plot_item'):
             self.plot_grid[(0,0)].removeItem(event_param._fit_plot_item)
         event_param._fit_plot_item = self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
+        event_param.fit = fit
+        event_param._initial_fit_guesses = init_params
 
         ## display fit params
         self.update_fit_param_display(event_param, fit)
@@ -569,8 +584,6 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             param.child('Fit results').child('NRMSE').setValue('nan')
         else:
             param.child('Fit results').child('NRMSE').setValue('%0.2f'%nmrse)
-
-        param.fit = fit
 
     # def update_events(self, events):
     #     print('update_events?')
@@ -694,11 +707,13 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         fit = None
         fit_pass = None
+        initial_params=None
         evs = [] ## sanity check that we only have one event fit
         for p in self.event_params.children():
             if p._should_have_fit:
                 evs.append(p.name())
                 fit = p.fit
+                initial_params=p._initial_fit_guesses
                 fit_pass = p['Fit passes qc']
                 if fit_pass is None:
                     raise Exception('Please specify whether fit passes qc for %s'%p.name())
@@ -709,6 +724,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         res = {'category_name':self.key,
                'fit': fit,
                'fit_pass':fit_pass,
+               'initial_params':initial_params,
                'n_events':len(self.event_params.children()),
                'event_times':[p['user_latency'] for p in self.event_params.children()]}
         self.sigNewAnalysisAvailable.emit(res)
