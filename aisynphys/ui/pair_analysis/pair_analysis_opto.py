@@ -32,6 +32,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         self.layout = pg.QtGui.QGridLayout()
         self.layout.setContentsMargins(3,3,3,3)
+        self.setGeometry(280, 130, 1500, 900)
         self.setLayout(self.layout) 
 
         self.h_splitter = pg.QtGui.QSplitter(pg.QtCore.Qt.Horizontal)
@@ -48,6 +49,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.latency_superline = SuperLine()
 
         self.selectTabWidget.addTab(self.expt_selector, 'Experiment Select')
+        self.selectTabWidget.addTab(self.expt_browser, "Pair Select")
 
         self.ptree = pg.parametertree.ParameterTree(showHeader=False)
         self.pair_param = pg.parametertree.Parameter.create(name='Current Pair', type='str', readonly=True)
@@ -67,24 +69,25 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         #self.fit_btn = pg.QtGui.QPushButton('Fit Responses')
         #self.fit_btn.setEnabled(False)
-        self.fit_ptree = pg.parametertree.ParameterTree(showHeader=False)
+        #self.fit_ptree = pg.parametertree.ParameterTree(showHeader=False)
         self.category_param = pg.parametertree.Parameter.create(name='Categories', type='group')
-        self.fit_ptree.addParameters(self.category_param)
+        self.ptree.addParameters(self.category_param)
         self.comment_param = pg.parametertree.Parameter.create(name='Comments', type='group', children=[
             {'name': 'Hashtag', 'type': 'list', 'values': comment_hashtag, 'value': ''},
             {'name': '', 'type': 'text'}
         ])
-        self.fit_ptree.addParameters(self.comment_param)
+        self.ptree.addParameters(self.comment_param)
         self.comment_param.child('Hashtag').sigValueChanged.connect(self.add_text_to_comments)
         #self.fit_ptree.addParameters(self.ctrl_panel.output_params, showTop=False)
 
         self.save_btn = pg.FeedbackButton('Save Analysis')
 
         v_splitter = pg.QtGui.QSplitter(pg.QtCore.Qt.Vertical)
-        for widget in [self.expt_browser, self.ptree, self.fit_ptree, self.save_btn]:
+        for widget in [self.ptree, self.save_btn]:
             v_splitter.addWidget(widget)
 
-        self.selectTabWidget.addTab(v_splitter, "Pair Select")
+        
+        self.selectTabWidget.addTab(v_splitter, "Current Pair")
 
         #self.h_splitter.addWidget(self.expt_selector)
         #self.h_splitter.addWidget(v_splitter)
@@ -152,6 +155,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.load_pair(pair)
             if record is not None:
                 self.load_saved_fit(record)
+            self.selectTabWidget.setCurrentIndex(2)
 
     def synapse_call_changed(self):
         value = self.ctrl_panel.synapse.value()
