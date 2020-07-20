@@ -472,6 +472,11 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             param._should_have_fit = True
         else:
             param._should_have_fit = False
+            if hasattr(param, '_fit_plot_item'):
+                self.plot_grid[(0,0)].removeItem(param._fit_plot_item)
+            for name in ['amplitude', 'latency', 'rise time', 'decay tau', 'NRMSE']:
+                param.child('Fit results').child(name).setValue('')
+
 
     def fit_event(self, btn_param):
         event_param = btn_param.parent()
@@ -535,10 +540,12 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         #     bad_fit=False
 
         ## plot fit
-        self.current_fit = fits[0]
         v = fits[0].values
         y=Psp.psp_func(self.average_response.time_values,v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
-        self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
+
+        if hasattr(event_param, '_fit_plot_item'):
+            self.plot_grid[(0,0)].removeItem(event_param._fit_plot_item)
+        event_param._fit_plot_item = self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
 
         ## display fit params
         self.update_fit_param_display(event_param, fit)
@@ -559,18 +566,21 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         else:
             param.child('Fit results').child('NRMSE').setValue('%0.2f'%nmrse)
 
-    def update_events(self, events):
-        for ch in self.event_params.children():
-            self.plot_grid[(0,0)].removeItem(ch.child('user_latency').line)
-        self.event_params.clearChildren()
+        param.fit = fit
 
-        if len(events) > 0:
-            times = events['time']
-            zeroth = np.argwhere(times == times[times > 0].min())
+    # def update_events(self, events):
+    #     print('update_events?')
+    #     for ch in self.event_params.children():
+    #         self.plot_grid[(0,0)].removeItem(ch.child('user_latency').line)
+    #     self.event_params.clearChildren()
 
-            for i, ev in enumerate(events):
-                param = self.add_event_param('event_%i'%(i-zeroth), ev['time'])
-                param.event_number=i
+    #     if len(events) > 0:
+    #         times = events['time']
+    #         zeroth = np.argwhere(times == times[times > 0].min())
+
+    #         for i, ev in enumerate(events):
+    #             param = self.add_event_param('event_%i'%(i-zeroth), ev['time'])
+    #             param.event_number=i
 
     def plot_responses(self, responses):
         self.responses = responses
@@ -677,12 +687,21 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
 
     def add_analysis_btn_clicked(self):
-        if len(event_params.children()) == 0:
-            fit = None
-            fit_pass = None
-        else:
-            fit = self.current_fit
-            fit_pass = self.event_params.chile('event_0')['Fit passes qc']
+
+        fit = None
+        fit_pass = None
+        evs = [] ## sanity check that we only have one event fit
+        for p in self.event_params.children():
+            if p._should_have_fit:
+                evs.append(p.name())
+                fit = p.fit
+                fit_pass = p['Fit passes qc']
+                if fit_pass is None:
+                    raise Exception('Please specify whether fit passes qc for %s'%p.name())
+        if len(evs) > 1:
+            ### need to figure out why this is happening
+            raise Exception('Error: More than one fit found. This is a bug')
+
         res = {'category_name':self.key,
                'fit': fit,
                'fit_pass':fit_pass,
