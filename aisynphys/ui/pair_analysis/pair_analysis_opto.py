@@ -1,4 +1,4 @@
-import datetime, itertools
+import datetime, itertools, time
 import pyqtgraph as pg
 import numpy as np
 from collections import OrderedDict
@@ -384,33 +384,40 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         v_layout.setContentsMargins(0,0,0,0)
         v_widget.setContentsMargins(0,0,0,0)
 
-        self.plot_grid.set_shape(2,1)
+        self.plot_grid.set_shape(1,1)
         self.plot_grid[0,0].setTitle('data')
-        self.plot_grid[1,0].setTitle('processing')
+        # self.plot_grid[1,0].setTitle('processing')
 
         h_splitter.addWidget(v_widget)
         h_splitter.addWidget(self.plot_grid)
 
-        self.processing_params = pg.parametertree.Parameter.create(name='Processing', type='group', children=[
-            {'name':'pre-deconvolve bessel', 'type':'float', 'value':6e3, 'suffix':'Hz', 'siPrefix':True, 'dec':True},
-            {'name':'deconvolve tau', 'type':'float', 'value':15e-3, 'suffix':'s', 'siPrefix':True, 'step':1e-3},
-            {'name':'post-deconvolve bessel', 'type':'float', 'value':1e3, 'suffix':'Hz', 'siPrefix':True, 'dec':True},
-            {'name':'event_threshold_fraction', 'type':'float', 'value':0.3, 'step':0.1}
-            ])
-        self.threshold_line = pg.InfiniteLine(pos=0, angle=0, pen='y', movable=True)
-        self.param_tree.addParameters(self.processing_params)
-        self.event_params = pg.parametertree.Parameter.create(name="Events", type='group')
+        # self.processing_params = pg.parametertree.Parameter.create(name='Processing', type='group', children=[
+        #     {'name':'pre-deconvolve bessel', 'type':'float', 'value':6e3, 'suffix':'Hz', 'siPrefix':True, 'dec':True},
+        #     {'name':'deconvolve tau', 'type':'float', 'value':15e-3, 'suffix':'s', 'siPrefix':True, 'step':1e-3},
+        #     {'name':'post-deconvolve bessel', 'type':'float', 'value':1e3, 'suffix':'Hz', 'siPrefix':True, 'dec':True},
+        #     {'name':'event_threshold_fraction', 'type':'float', 'value':0.3, 'step':0.1}
+        #     ])
+        # self.threshold_line = pg.InfiniteLine(pos=0, angle=0, pen='y', movable=True)
+        #self.param_tree.addParameters(self.processing_params)
+        self.event_params = pg.parametertree.Parameter.create(name="Events", type='group', addText='Add event')
         self.param_tree.addParameters(self.event_params)
-        #self.event_params.sigAddNew.connect(self.add_event_param)
-        self.threshold_line.sigPositionChanged.connect(self.threshold_line_moved)
+        self.event_params.sigAddNew.connect(self.add_event_param)
+        #self.threshold_line.sigPositionChanged.connect(self.threshold_line_moved)
 
-        for param in self.processing_params.children():
-            param.sigValueChanged.connect(self.process_data)
+        #for param in self.processing_params.children():
+        #    param.sigValueChanged.connect(self.process_data)
 
-    def add_event_param(self, name, latency):
-        visible=int(name[-1])==0
-        color = pg.intColor(len(self.event_params.children())+1)
-        param = pg.parametertree.Parameter.create(name=name, type='group', children=[
+    def add_event_param(self, name=None, latency=None):
+        n = len(self.event_params.children())
+        if n == 0:
+            latency = 10e-3
+            visible = True
+        else:
+            latency = max(self.event_params.children()[-1]['user_latency']+2e-3, 10e-3)
+            visible = self.event_params.children()[-1]['user_latency'] < 0
+
+        color = pg.intColor(n)
+        param = pg.parametertree.Parameter.create(name='event_%i'%n, type='group', children=[
             LatencyParam(name='user_latency', value=latency, color=color),
             {'name': 'display_color', 'type':'color', 'value':color, 'readOnly':True},
             {'name': 'Fit results', 'type':'group', 'readonly':True, 'visible':visible, 'expanded':True, 'children':[
@@ -419,22 +426,60 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 {'name':'rise time', 'type':'str', 'readonly':True},
                 {'name':'decay tau', 'type':'str', 'readonly':True},
                 {'name':'NRMSE', 'type':'str', 'readonly':True}]},
-            {'name': 'Fit Pass', 'type': 'bool', 'visible':visible},
+            {'name': 'Fit passes qc', 'type': 'list', 'values':{'': None, 'True':True, 'False':False}, 'value':'', 'visible':visible},
             {'name': 'Warning', 'type':'str', 'readonly':True, 'value':'', 'visible':False},
-            {'name': 'Fit event', 'type':'action', 'visible':visible}
+            {'name': 'Fit event', 'type':'action', 'visible':visible, 'renamable':False}
             ])
         self.event_params.addChild(param)
         param.child('Fit event').sigActivated.connect(self.fit_event)
+        param.child('user_latency').sigValueChanged.connect(self.event_latency_changed)
         self.plot_grid[(0,0)].addItem(param.child('user_latency').line)
         return param
 
+    def event_latency_changed(self, latency_param):
+        #print('event_latency_changed:')
+        #print('   latency_param.parent().name()')
+        i = int(latency_param.parent().name()[-1])
+        if i > 0:
+            pre = self.event_params.child('event_%i'%(i-1))
+            bounds = pre.child('user_latency').line.bounds()
+            pre.child('user_latency').line.setBounds([bounds[0], latency_param.value()])
+            #print('   pre.name() bounds:%s, %s' %(bounds[0], latency_param.values()))
+        if i < len(self.event_params.children())-1:
+            post = self.event_params.child('event_%i'%(i+1))
+            bounds = post.child('user_latency').line.bounds()
+            post.child('user_latency').line.setBounds([latency_param.value(), bounds[1]])
+
+        first_event=None
+        for p in self.event_params.children():
+            if p['user_latency'] > 0:
+                first_event = p.name()
+                break
+        for p in self.event_params.children():
+            if p.name() != first_event:
+                self.show_fit_params(p, False)
+            else:
+                self.show_fit_params(p, True)
+
+    def show_fit_params(self, param, show):
+        """*param* is an event param, *show* is boolean"""
+        #for ch in param.child('Fit results').children():
+        #    ch.show(show)
+        param.child('Fit results').show(show)
+        param.child('Fit passes qc').show(show)
+        param.child('Fit event').show(show)
+        if show:
+            param._should_have_fit = True
+        else:
+            param._should_have_fit = False
+
     def fit_event(self, btn_param):
         event_param = btn_param.parent()
-        i = event_param.event_number
+        i = int(event_param.name()[-1])
         latency = event_param['user_latency']
 
         window = [latency - 0.0002, latency+0.0002]
-        ev = self.deconvolved_events[i]
+        #ev = self.deconvolved_events[i]
 
         ##### Snip out the section of the deconvolved trace containing the event, reconvolve it and fit. - currently not working too well
         # if i == len(self.deconvolved_events)-1:
@@ -455,17 +500,17 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         ## basically make travis's measurments, then try to fit to get tau
         ## this seems good so far -- for some data small differences in latency window create big differences in the fits (it turns out this is resolved by making the search spacing for the fit finer), but for most the fits are pretty resilient
         ##                              -> maybe we want to fit with some different rise_time/amp seeds and see how similar the fits are, similar -> probably good, variation -> don't trust
-        if i == len(self.deconvolved_events)-1: ## last event
+        if i == len(self.event_params.children())-1: ## last event
             data = self.average_response.time_slice(latency-0.001, latency+0.05)
         else:
             for param in self.event_params.children():
-                if param.event_number == i+1:
+                if int(param.name()[-1]) == i+1:
                     next_latency = param['user_latency']
                     break
             data = self.average_response.time_slice(latency-0.001, next_latency)
 
-        pre_bessel = self.processing_params['pre-deconvolve bessel']
-        filtered = filters.bessel_filter(data, pre_bessel, order=4, btype='low', bidir=True)
+        #pre_bessel = self.processing_params['pre-deconvolve bessel']
+        filtered = filters.bessel_filter(data, 6000, order=4, btype='low', bidir=True)
 
         #print("-------------")
         #print("latency:", latency)
@@ -547,62 +592,89 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 item = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
                 #self.items.append(item)
         self.plot_grid[(0,0)].autoRange()
-        self.process_data()
+        #self.process_data()
 
-    def threshold_line_moved(self, line):
-        frac = line.value()/max(abs(self.post_filtered.data))
-        self.processing_params.child('event_threshold_fraction').setValue(frac)
+    #def threshold_line_moved(self, line):
+    #    frac = line.value()/max(abs(self.post_filtered.data))
+    #    self.processing_params.child('event_threshold_fraction').setValue(frac)
 
-    def process_data(self):
+    # def process_data_old(self):
 
-        plot = self.plot_grid[(1,0)]
-        plot.clear()
+    #     plot = self.plot_grid[(1,0)]
+    #     plot.clear()
 
-        plot.plot(self.average_response.time_values, self.average_response.data)
+    #     plot.plot(self.average_response.time_values, self.average_response.data)
 
-        pre_bessel = self.processing_params['pre-deconvolve bessel']
-        post_bessel = self.processing_params['post-deconvolve bessel']
-        tau = self.processing_params['deconvolve tau']
-        threshold_frac = self.processing_params['event_threshold_fraction']
+    #     pre_bessel = self.processing_params['pre-deconvolve bessel']
+    #     post_bessel = self.processing_params['post-deconvolve bessel']
+    #     tau = self.processing_params['deconvolve tau']
+    #     threshold_frac = self.processing_params['event_threshold_fraction']
 
 
-        pre_filtered = filters.bessel_filter(self.average_response, pre_bessel, order=4, btype='low', bidir=True)
-        self.deconvolved = ev_detect.exp_deconvolve(pre_filtered, tau)
-        self.post_filtered = filters.bessel_filter(self.deconvolved, post_bessel, order=1, btype='low', bidir=True)
+    #     pre_filtered = filters.bessel_filter(self.average_response, pre_bessel, order=4, btype='low', bidir=True)
+    #     self.deconvolved = ev_detect.exp_deconvolve(pre_filtered, tau)
+    #     self.post_filtered = filters.bessel_filter(self.deconvolved, post_bessel, order=1, btype='low', bidir=True)
 
-        plot.plot(pre_filtered.time_values, pre_filtered.data, pen='b')
-        plot.plot(self.deconvolved.time_values, self.deconvolved.data, pen='r')
-        plot.plot(self.post_filtered.time_values, self.post_filtered.data, pen='g')
+    #     plot.plot(pre_filtered.time_values, pre_filtered.data, pen='b')
+    #     plot.plot(self.deconvolved.time_values, self.deconvolved.data, pen='r')
+    #     plot.plot(self.post_filtered.time_values, self.post_filtered.data, pen='g')
 
-        threshold = threshold_frac*max(self.post_filtered.data)
-        with pg.SignalBlock(self.threshold_line.sigPositionChanged, self.threshold_line_moved):
-            self.threshold_line.setPos(threshold)
-        plot.addItem(self.threshold_line)
-        #plot.plot(post_filtered.time_values, [threshold]*len(post_filtered), pen='y')
+    #     threshold = threshold_frac*max(self.post_filtered.data)
+    #     with pg.SignalBlock(self.threshold_line.sigPositionChanged, self.threshold_line_moved):
+    #         self.threshold_line.setPos(threshold)
+    #     plot.addItem(self.threshold_line)
+    #     #plot.plot(post_filtered.time_values, [threshold]*len(post_filtered), pen='y')
 
-        ## index, length, sum, peak, peak_index, time, duration, area, peak_time
-        self.deconvolved_events = ev_detect.threshold_events(self.post_filtered, threshold) ## find events in deconvolved trace
-        plot.addItem(pg.VTickGroup(self.deconvolved_events['time']))
+    #     ## index, length, sum, peak, peak_index, time, duration, area, peak_time
+    #     self.deconvolved_events = ev_detect.threshold_events(self.post_filtered, threshold) ## find events in deconvolved trace
+    #     plot.addItem(pg.VTickGroup(self.deconvolved_events['time']))
 
-        self.update_events(self.deconvolved_events)
+    #     self.update_events(self.deconvolved_events)
 
-        # dec_times = list(dec_events['time']) + [None]
-        # event_times = []
-        # for i in range(len(dec_events['time'])):
-        #     ev = deconvolved.time_slice(dec_times[i], dec_times[i+1])
-        #     d = np.concatenate([np.full((100), ev.data[0]), ev.data, np.full((int(0.1/ev.dt)), ev.data[-1])])
-        #     tv = np.concatenate([np.arange(ev.t0-ev.dt*100, ev.t0-ev.dt/10., ev.dt), ev.time_values, np.arange(ev.time_values[-1]+ev.dt, ev.time_values[-1]+0.1+ev.dt, ev.dt)])
-        #     data1 = TSeries(data=d, time_values=tv)
-        #     data = ev_detect.exp_reconvolve(data1, tau)
-        #     thresh = (max(data.data)-data.data[-1])*threshold_frac ## need to figure this out for negative going events too
-        #     event = ev_detect.threshold_events(data, thresh)
-        #     if len(event) > 1:
-        #         raise Exception('stop')
-        #     event_times.append(event['time'][0])
+
+    #     # dec_times = list(dec_events['time']) + [None]
+    #     # event_times = []
+    #     # for i in range(len(dec_events['time'])):
+    #     #     ev = deconvolved.time_slice(dec_times[i], dec_times[i+1])
+    #     #     d = np.concatenate([np.full((100), ev.data[0]), ev.data, np.full((int(0.1/ev.dt)), ev.data[-1])])
+    #     #     tv = np.concatenate([np.arange(ev.t0-ev.dt*100, ev.t0-ev.dt/10., ev.dt), ev.time_values, np.arange(ev.time_values[-1]+ev.dt, ev.time_values[-1]+0.1+ev.dt, ev.dt)])
+    #     #     data1 = TSeries(data=d, time_values=tv)
+    #     #     data = ev_detect.exp_reconvolve(data1, tau)
+    #     #     thresh = (max(data.data)-data.data[-1])*threshold_frac ## need to figure this out for negative going events too
+    #     #     event = ev_detect.threshold_events(data, thresh)
+    #     #     if len(event) > 1:
+    #     #         raise Exception('stop')
+    #     #     event_times.append(event['time'][0])
 
 
         
-        # plot.addItem(pg.VTickGroup(event_times, (0.7, 1)))
+    #     # plot.addItem(pg.VTickGroup(event_times, (0.7, 1)))
+
+    # def process_data(self):
+    #     print('process_data')
+    #     plot = self.plot_grid[(1,0)]
+    #     plot.clear()
+
+
+    #     plot.plot(self.average_response.time_values, self.average_response.data)
+
+    #     filtered = filters.bessel_filter(self.average_response, 6000, order=4, btype='low', bidir=True)
+    #     pens = ['r', 'y', 'g', 'c', 'b']
+    #     for i, x in enumerate([1,2,4,6,10]):
+    #         f1 = np.diff(filtered.data[::x])
+    #         times = filtered.time_values[::x][:-1]
+    #         times += (times[1]-times[0])/2.
+    #         plot.plot(times.copy(), f1, pen=pens[i])
+    #         if any(np.diff(times) < 0):
+    #             raise Exception('funny business')
+    #         #raise Exception('stop')
+    #         ts = TSeries(time_values=times.copy(), data=f1)
+    #         threshold = ts.data[:ts.index_at(0)-1].std()*5
+    #         events = ev_detect.threshold_events(ts, threshold, adjust_times=False)
+    #         plot.addItem(pg.VTickGroup(events['time'], pen=pens[i]))
+    #         #time.sleep(2)
+
+
 
     def add_analysis_btn_clicked(self):
         if len(event_params.children()) == 0:
@@ -610,7 +682,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             fit_pass = None
         else:
             fit = self.current_fit
-            fit_pass = self.event_params.chile('event_0')['Fit Pass']
+            fit_pass = self.event_params.chile('event_0')['Fit passes qc']
         res = {'category_name':self.key,
                'fit': fit,
                'fit_pass':fit_pass,
@@ -620,17 +692,13 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
 
 
-
-
-
-
 class LatencyParam(pg.parametertree.parameterTypes.SimpleParameter):
 
     def __init__(self, *args, **kargs):
         kargs.update({'siPrefix':True, 'suffix':'s', 'type':'float', 'step':100e-6})
         pg.parametertree.parameterTypes.SimpleParameter.__init__(self, *args, **kargs)
 
-        self.line = pg.InfiniteLine(pos=self.value(), pen=kargs.get('color'), movable=True)
+        self.line = pg.InfiniteLine(pos=self.value(), pen=kargs.get('color'), movable=True, hoverPen=pg.mkPen('y', width=2))
 
         self.sigValueChanged.connect(self.update_line_position)
         self.line.sigPositionChanged.connect(self.update_param_value)
