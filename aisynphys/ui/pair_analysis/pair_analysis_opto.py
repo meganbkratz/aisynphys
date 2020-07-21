@@ -217,7 +217,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.pair_param.child('Gap junction call').setValue(notes.get('gap_junction', False))
         self.comment_param.child('').setValue(notes.get('comments', ''))
 
-        saved_categories = list(notes['categories'].keys())
+        saved_categories = list(notes['categories'].keys()) # sanity check
 
         for cat in self.analyzers.keys():
             data = notes['categories'].get(str(cat), None)
@@ -231,11 +231,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                 p.child('user_passed_fit').show()
                 self.analyzers[cat].load_saved_data(data)
 
-        if len(saved_categories) > 0:
+        if len(saved_categories) > 0: # sanity check
             raise Exception("Previously saved categories %s, but no analyzer was found for these."%saved_categories)
-
-    def load_from_csv(self):
-        pass
 
     def sort_responses(self, pulse_responses):
         ex_limits = [-80e-3, -60e-3]
@@ -455,7 +452,9 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         for p in self.event_params.children():
             if p._should_have_fit:
-                self.fit_event(p.child('Fit event'))
+                self.plot_fit(p, data['fit_parameters'], data['initial_parameters'])
+                self.update_fit_param_display(p, data['fit_parameters'])
+                p.child('Fit passes qc').setValue(data['fit_pass'])
 
     def add_event_param(self):
         n = len(self.event_params.children())
@@ -590,18 +589,21 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         # else:
         #     bad_fit=False
 
+        self.plot_fit(event_param, fits[0].values, init_params)
+        ## display fit params
+        self.update_fit_param_display(event_param, fits[0].values)
+
+    def plot_fit(self, event_param, fit_values, init_values):
         ## plot fit
-        v = fits[0].values
+        v = fit_values
         y=Psp.psp_func(self.average_response.time_values,v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
 
         if hasattr(event_param, '_fit_plot_item'):
             self.plot_grid[(0,0)].removeItem(event_param._fit_plot_item)
         event_param._fit_plot_item = self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
-        event_param.fit = fit
-        event_param._initial_fit_guesses = init_params
-
-        ## display fit params
-        self.update_fit_param_display(event_param, v)
+        event_param._fit_values = v
+        event_param._initial_fit_guesses = init_values
+        
 
     def update_fit_param_display(self, param, v):
         if self.clamp_mode == 'vc':
@@ -745,12 +747,14 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         evs = [] ## sanity check that we only have one event fit
         for p in self.event_params.children():
             if p._should_have_fit:
-                evs.append(p.name())
-                fit = p.fit
-                initial_params=p._initial_fit_guesses
                 fit_pass = p['Fit passes qc']
                 if fit_pass is None:
                     raise Exception('Please specify whether fit passes qc for %s'%p.name())
+
+                evs.append(p.name())
+                fit = p._fit_values
+                initial_params=p._initial_fit_guesses
+                
         if len(evs) > 1:
             ### need to figure out why this is happening
             raise Exception('Error: More than one fit found. This is a bug')
