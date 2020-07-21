@@ -155,6 +155,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.load_pair(pair)
             if record is not None:
                 self.load_saved_fit(record)
+            else:
+                self.load_from_csv()
             self.selectTabWidget.setCurrentIndex(2)
 
     # def synapse_call_changed(self):
@@ -205,9 +207,35 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             #self.ctrl_panel.create_new_fit_params([str(k) for k in self.sorted_responses.keys()])
             #self.create_new_plots(self.sorted_responses.keys())
             self.create_new_analyzers(self.sorted_responses.keys())
-            self.fit_params = {key:{'initial':{}, 'fit':{}} for key in self.sorted_responses.keys()}
+            #self.fit_params = {key:{'initial':{}, 'fit':{}} for key in self.sorted_responses.keys()}
 
             self.plot_responses()
+
+    def load_saved_fit(self, record):
+        notes = record.notes
+        self.pair_param.child('Synapse call').setValue(notes.get('synapse_type', 'not specified'))
+        self.pair_param.child('Gap junction call').setValue(notes.get('gap_junction', False))
+        self.comment_param.child('').setValue(notes.get('comments', ''))
+
+        saved_categories = list(notes['categories'].keys())
+
+        for cat in self.analyzers.keys():
+            data = notes['categories'].get(str(cat), None)
+            saved_categories.remove(str(cat))
+            if data is not None:
+                p = self.category_param.child(str(cat))
+                p.child('status').setValue('previously analyzed')
+                p.child('number_of_events').setValue(data['n_events'])
+                p.child('number_of_events').show()
+                p.child('user_passed_fit').setValue(data['fit_pass'])
+                p.child('user_passed_fit').show()
+                self.analyzers[cat].load_saved_data(data)
+
+        if len(saved_categories) > 0:
+            raise Exception("Previously saved categories %s, but no analyzer was found for these."%saved_categories)
+
+    def load_from_csv(self):
+        pass
 
     def sort_responses(self, pulse_responses):
         ex_limits = [-80e-3, -60e-3]
@@ -291,9 +319,6 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         for i, key in enumerate(self.sorted_responses.keys()):
             self.analyzers[key].plot_responses(self.sorted_responses[key])
 
-
-    def load_saved_fit(self, record):
-        raise Exception('implement me!')
 
     def generate_warnings(self):
         self.warnings = None
@@ -423,7 +448,16 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         #for param in self.processing_params.children():
         #    param.sigValueChanged.connect(self.process_data)
 
-    def add_event_param(self, name=None, latency=None):
+    def load_saved_data(self, data):
+        for time in data['event_times']:
+            p = self.add_event_param()
+            p.child('user_latency').setValue(time)
+
+        for p in self.event_params.children():
+            if p._should_have_fit:
+                self.fit_event(p.child('Fit event'))
+
+    def add_event_param(self):
         n = len(self.event_params.children())
         if n == 0:
             latency = 10e-3
@@ -567,19 +601,19 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         event_param._initial_fit_guesses = init_params
 
         ## display fit params
-        self.update_fit_param_display(event_param, fit)
+        self.update_fit_param_display(event_param, v)
 
-    def update_fit_param_display(self, param, fit):
+    def update_fit_param_display(self, param, v):
         if self.clamp_mode == 'vc':
-            param.child('Fit results').child('amplitude').setValue(pg.siFormat(fit.values['amp'], suffix='A'))
+            param.child('Fit results').child('amplitude').setValue(pg.siFormat(v['amp'], suffix='A'))
         elif self.clamp_mode == 'ic':
-            param.child('Fit results').child('amplitude').setValue(pg.siFormat(fit.values['amp'], suffix='V'))
+            param.child('Fit results').child('amplitude').setValue(pg.siFormat(v['amp'], suffix='V'))
 
-        param.child('Fit results').child('latency').setValue(pg.siFormat(fit.values['xoffset'], suffix='s'))
-        param.child('Fit results').child('rise time').setValue(pg.siFormat(fit.values['rise_time'], suffix='s'))
-        param.child('Fit results').child('decay tau').setValue(pg.siFormat(fit.values['decay_tau'], suffix='s'))
+        param.child('Fit results').child('latency').setValue(pg.siFormat(v['xoffset'], suffix='s'))
+        param.child('Fit results').child('rise time').setValue(pg.siFormat(v['rise_time'], suffix='s'))
+        param.child('Fit results').child('decay tau').setValue(pg.siFormat(v['decay_tau'], suffix='s'))
 
-        nrmse = fit.values.get('nrmse')
+        nrmse = v.get('nrmse')
         if nrmse is None:
             param.child('Fit results').child('NRMSE').setValue('nan')
         else:
