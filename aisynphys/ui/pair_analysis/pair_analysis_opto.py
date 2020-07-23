@@ -69,7 +69,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         for widget in [self.ptree, self.save_btn]:
             v_splitter.addWidget(widget)
 
-        
+
         self.selectTabWidget.addTab(v_splitter, "Current Pair")
 
         self.h_splitter.addWidget(self.selectTabWidget)
@@ -290,16 +290,14 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         if synapse_call is not None:
             for key in self.sorted_responses.keys():
                 param = self.category_param.child(str(key))
-                if param['status'] == 'done':
+                if param['status'] in ['done', 'previously analyzed']:
                     meta['categories'][str(key)]={
                         'initial_parameters':param.initial_params,
-                        'fit_parameters': param.fit.values,
+                        'fit_parameters': param.fit,
                         'fit_pass': param['user_passed_fit'],
                         'n_events': param['number_of_events'],
                         'event_times':param.event_times
                         }
-                else:
-                    meta['comments'] += 'Skipped analysis of %s.\n'%str(key)
         
         session = notes_db.db.session(readonly=False)
         record = notes_db.get_pair_notes_record(expt_id, pre_cell_id, post_cell_id, session=session)
@@ -315,17 +313,87 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             session.add(entry)
             session.commit()
         else:
-            #self.print_pair_notes(meta, record)
-            msg = pg.QtGui.QMessageBox.question(None, "Pair Analysis", 
-                "The record you are about to save conflicts with what is in the Pair Notes database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?",
-                pg.QtGui.QMessageBox.Yes | pg.QtGui.QMessageBox.No)
-            if msg == pg.QtGui.QMessageBox.Yes:
+            #self.print_pair_notes(meta, record.notes)
+            #msg = pg.QtGui.QMessageBox.question(None, "Pair Analysis", 
+            #    "The record you are about to save conflicts with what is in the Pair Notes database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?",
+            #    pg.QtGui.QMessageBox.Yes | pg.QtGui.QMessageBox.No)
+            msg = CompareDialog("There is already a record for %s in the %s database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?"%(self.pair, notes_db.name), OrderedDict([('Previously saved',record.notes), ('New',meta)]))
+            if msg == pg.QtGui.QDialog.Accepted:
                 record.notes = meta
                 record.modification_time = datetime.datetime.now()
                 session.commit() 
             else:
                 raise Exception('Save Cancelled')
         session.close()
+
+class CompareDialog(pg.QtGui.QDialog):
+
+
+    def __init__(self, message, data, execute=True):
+        """A dialog box that displays a message and a DiffTreeWidget. An Okay button
+        is connected to the dialogs accept slot and a Cancel button is connected to 
+        reject.
+
+        Parameters
+        ----------
+        message : str
+            The message to be displayed at the top of the dialog.
+        data : dict
+            The data to be compared. This should be a dict with 2 entries. The key 
+            for each entry should a label for the data, and the value should be the
+            data to compare. These values are passed directly to DiffTreeWidget.setData().
+        execute : bool | True
+            If True, start self.exec_() at the end of __init__ 
+        """
+        pg.QtGui.QDialog.__init__(self, None)
+        self.setSizeGripEnabled(True)
+
+        layout = pg.QtGui.QGridLayout()
+        self.setLayout(layout)
+        text = pg.QtGui.QLabel(message)
+
+        okBtn = pg.QtGui.QPushButton("Okay")
+        cancelBtn = pg.QtGui.QPushButton('Cancel')
+        cancelBtn.setDefault(True)
+
+        self.compareTree = pg.DiffTreeWidget()
+        def sizeHint():
+            return pg.QtCore.QSize(1000,600)
+
+        self.compareTree.sizeHint = sizeHint
+
+        layout.addWidget(text, 0,0,1,3)
+        layout.addWidget(self.compareTree, 1, 0, 1, 3)
+        layout.addWidget(cancelBtn, 2, 0)
+        layout.addWidget(okBtn, 2, 2)
+        layout.setRowStretch(1, 10)
+
+        layout.setSpacing(3)
+        layout.setContentsMargins(0,0,0,0)
+        self.setContentsMargins(0,0,0,0)
+
+        if len(data) != 2:
+            raise Exception("data argument should be a {name1:data1, name2:data2}")
+
+        vals = []
+        for i, k in enumerate(data.keys()):
+            self.compareTree.trees[i].setHeaderLabels([k, 'type', 'value'])
+            vals.append(data[k])
+
+        self.compareTree.setData(vals[0], vals[1])
+
+        cancelBtn.clicked.connect(self.reject)
+        okBtn.clicked.connect(self.accept)
+
+        if execute:
+            self.exec_()
+
+
+
+
+        
+
+
     
 
 class ResponseAnalyzer(pg.QtGui.QWidget):
