@@ -381,7 +381,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             if p._should_have_fit:
                 self.plot_fit(p, data['fit_parameters'], data['initial_parameters'])
                 self.update_fit_param_display(p, data['fit_parameters'])
-                p.child('Fit passes qc').setValue(data['fit_pass'])
+                p.child('Fit passes qc').setValue({'':None, 'True':True, 'False':False}.get(data['fit_pass']))
 
     def add_event_param(self):
         n = len(self.event_params.children())
