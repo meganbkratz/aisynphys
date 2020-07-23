@@ -612,6 +612,9 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 item = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
         self.plot_grid[(0,0)].autoRange()
 
+        self.plot_grid[(0,0)].setLabel('bottom', text='Time from stimulus', units='s')
+        self.plot_grid[(0,0)].setLabel('left', units={'ic':'V', 'vc':'A'}.get(self.clamp_mode))
+
     def add_analysis_btn_clicked(self):
 
         fit = None
