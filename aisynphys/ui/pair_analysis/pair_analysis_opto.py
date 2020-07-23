@@ -411,6 +411,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         self.responses = None ## holder for {pass:[tseries], fail:[tseries]}
         self.average_response = None ## holder for the average response
+        self.event_counter = 0
 
         self.key = key
         self.clamp_mode = self.key[0] if self.key is not None else None
@@ -460,10 +461,11 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             latency = max(self.event_params.children()[-1]['user_latency']+2e-3, 10e-3)
             visible = self.event_params.children()[-1]['user_latency'] < 0
 
-        color = pg.intColor(n)
-        param = pg.parametertree.Parameter.create(name='event_%i'%n, type='group', children=[
+        color = pg.intColor(self.event_counter)
+        self.event_counter += 1
+        param = pg.parametertree.Parameter.create(name='event_%i'%n, type='group', removable=True, children=[
             LatencyParam(name='user_latency', value=latency, color=color),
-            {'name': 'display_color', 'type':'color', 'value':color, 'readOnly':True},
+            {'name': 'display_color', 'type':'color', 'value':color, 'readonly':True},
             {'name': 'Fit results', 'type':'group', 'readonly':True, 'visible':visible, 'expanded':True, 'children':[
                 {'name':'amplitude', 'type':'str', 'readonly':True},
                 {'name':'latency', 'type':'str', 'readonly':True},
@@ -478,7 +480,21 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         param.child('Fit event').sigActivated.connect(self.fit_event)
         param.child('user_latency').sigValueChanged.connect(self.event_latency_changed)
         self.plot_grid[(0,0)].addItem(param.child('user_latency').line)
+        param.sigRemoved.connect(self.event_param_removed)
         return param
+
+    def event_param_removed(self, param):
+        if hasattr(param, '_fit_plot_item'):
+            self.plot_grid[(0,0)].removeItem(param._fit_plot_item)
+
+        line = param.child('user_latency').line
+        self.plot_grid[(0,0)].removeItem(line)
+
+        if len(self.event_params.children()) > 0:
+            for i, p in enumerate(self.event_params.children()):
+                p.setName('event_%i'%i)
+            ## trigger re-evaluation of which events should be fit
+            self.event_latency_changed(self.event_params.children()[0].child('user_latency')) 
 
     def event_latency_changed(self, latency_param):
         i = int(latency_param.parent().name()[-1])
