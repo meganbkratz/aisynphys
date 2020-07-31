@@ -16,7 +16,7 @@ class OptoCortexLocationPipelineModule(DatabasePipelineModule):
     """
     name = 'cortical_location'
     dependencies = [OptoExperimentPipelineModule]
-    table_group = ['cell_location', 'cortical_site']
+    table_group = ['cortical_cell_location', 'cortical_site']
     
     @classmethod
     def create_db_entries(cls, job, session):
