@@ -195,18 +195,28 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         modes = ['vc', 'ic']
         holdings = [-70, -55, 0]
+        powers = []
+        for pr in pulse_responses:
+            if pr.stim_pulse.meta is None:
+                powers.append(None)
+            else:
+                powers.append(pr.stim_pulse.meta.get('pockel_cmd'))
+        powers = list(set(powers))
+        #powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses if pr.stim_pulse.meta is not None else None]))
+
+        keys = itertools.product(modes, holdings, powers)
 
         ### Need to differentiate between laser-stimulated pairs and electrode-electode pairs
         ## I would like to do this in a more specific way, ie: if the device type == Fidelity. -- this is in the pipeline branch of aisynphys 
         ## But that needs to wait until devices are in the db. (but also aren't they?)
         ## Also, we're going to have situations where the same pair has laser responses and 
         ##   electrode responses when we start getting 2P guided pair patching, and this will fail then
-        if pulse_responses[0].pair.pre_cell.electrode is None:  
-            powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses]))
-            keys = itertools.product(modes, holdings, powers)
+        # if pulse_responses[0].pair.pre_cell.electrode is None:  
+        #     powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses]))
+        #     keys = itertools.product(modes, holdings, powers)
 
-        else:
-            keys = itertools.product(modes, holdings)
+        # else:
+        #     keys = itertools.product(modes, holdings)
 
         sorted_responses = OrderedDict({k:{'qc_pass':[], 'qc_fail':[]} for k in keys})
 
@@ -215,9 +225,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         for pr in pulse_responses:
             clamp_mode = pr.recording.patch_clamp_recording.clamp_mode
             holding = pr.recording.patch_clamp_recording.baseline_potential
-            power = pr.stim_pulse.meta.get('pockel_cmd')
+            power = pr.stim_pulse.meta.get('pockel_cmd') if pr.stim_pulse.meta is not None else None
 
-            offset_distance = pr.stim_pulse.meta.get('offset_distance', 0)
+            offset_distance = pr.stim_pulse.meta.get('offset_distance', 0) if pr.stim_pulse.meta is not None else 0
             if offset_distance is None: ## early photostimlogs didn't record the offset between the stimulation plane and the cell
                 offset_distance = 0
 
@@ -415,6 +425,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         self.key = key
         self.clamp_mode = self.key[0] if self.key is not None else None
+        self.has_presynaptic_data = (key != None) and (key[2] == None)
         self.host = host
         self.param_tree = pg.parametertree.ParameterTree()
         self.plot_grid=PlotGrid()
@@ -431,8 +442,12 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         v_layout.setContentsMargins(0,0,0,0)
         v_widget.setContentsMargins(0,0,0,0)
 
-        self.plot_grid.set_shape(1,1)
+        self.plot_grid.set_shape(2,1)
         self.plot_grid[0,0].setTitle('data')
+        self.plot_grid[1,0].setTitle('presynaptic trace')
+        self.plot_grid.grid.ci.layout.setRowStretchFactor(0, 2)
+        if not self.has_presynaptic_data:
+            self.plot_grid[1,0].hide()
 
         h_splitter.addWidget(v_widget)
         h_splitter.addWidget(self.plot_grid)
@@ -601,7 +616,11 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             if len(prs) == 0:
                 continue
             prl = PulseResponseList(prs)
-            post_ts = prl.post_tseries(align='pulse', bsub=True)
+            if not self.has_presynaptic_data:
+                post_ts = prl.post_tseries(align='pulse', bsub=True)
+            else:
+                post_ts = prl.post_tseries(align='spike', bsub=True)
+                pre_ts = prl.pre_tseries(align='spike', bsub=True)
             
             for trace in post_ts:
                 item = self.plot_grid[(0,0)].plot(trace.time_values, trace.data, pen=qc_color[qc])
@@ -610,10 +629,23 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             if qc == 'qc_pass':
                 self.average_response = post_ts.mean()
                 item = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
-        self.plot_grid[(0,0)].autoRange()
 
+            if self.has_presynaptic_data:
+                for pr, spike in zip(prl, pre_ts):
+                    pre_qc = 'qc_pass' if pr.stim_pulse.n_spikes == 1 else 'qc_fail'
+                    item = self.plot_grid[(1,0)].plot(spike.time_values, spike.data, pen=qc_color[qc])
+                    if qc == 'qc_fail':
+                        item.setZValue(-10)
+
+
+        self.plot_grid[(0,0)].autoRange()
         self.plot_grid[(0,0)].setLabel('bottom', text='Time from stimulus', units='s')
         self.plot_grid[(0,0)].setLabel('left', units={'ic':'V', 'vc':'A'}.get(self.clamp_mode))
+
+        if self.has_presynaptic_data:
+            self.plot_grid[(1,0)].autoRange()
+            self.plot_grid[(1,0)].setLabel('bottom', units='s')
+            self.plot_grid[(1,0)].setLabel('left', units='V')
 
     def add_analysis_btn_clicked(self):
 
