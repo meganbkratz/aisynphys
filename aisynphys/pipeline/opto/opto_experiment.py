@@ -9,6 +9,7 @@ from neuroanalysis.data.experiment import AI_Experiment
 #from neuroanalysis.data.libraries import opto
 from neuroanalysis.data.loaders.opto_experiment_loader import OptoExperimentLoader
 from optoanalysis import data_model
+from ... import config
 
 ##### TODO: GO BACK TO EXPERIEMENT BEING DEPENDENT ON SLICE -- IN ALL SLICES USE EXPERIMENTS.CSV TO COME UP WITH SLICE LIST
 
@@ -36,7 +37,7 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
             slice_entry = db.slice_from_timestamp(ts, session=session)
 
             fields = {
-                'storage_path': expt.path, 
+                'storage_path': None if expt.path is None else os.path.relpath(expt.path, config.synphys_data), 
                 'ephys_file': None if expt.loader.get_ephys_file() is None else os.path.relpath(expt.loader.get_ephys_file(), expt.path),
                 'rig_name': expt.rig_name,
                 'project_name': expt.project_name,
