@@ -9,7 +9,7 @@ import traceback, sys
 import numpy as np   
 from ipfx.data_set_features import extractors_for_sweeps
 from ipfx.stimulus_protocol_analysis import LongSquareAnalysis
-from ipfx.ephys_data_set import Sweep, SweepSet
+from ipfx.dataset.ephys_data_set import Sweep, SweepSet
 from .pipeline_module import MultipatchPipelineModule
 from .experiment import ExperimentPipelineModule
 from .dataset import DatasetPipelineModule
