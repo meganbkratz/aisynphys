@@ -568,7 +568,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         filtered = filters.bessel_filter(data, 6000, order=4, btype='low', bidir=True)
 
-        peak_ind = np.argwhere(max(filtered.data)==filtered.data)[0][0]
+        peak_ind = np.argwhere(max(abs(filtered.data))==abs(filtered.data))[0][0]
         peak_time = filtered.time_at(peak_ind)
         rise_time = peak_time-(latency)
         amp = filtered.value_at(peak_time) - filtered.value_at(latency)
