@@ -54,12 +54,13 @@ class ExperimentBrowser(pg.TreeWidget):
                 recs = q.all()
                 experiments = list(set([rec.Experiment for rec in recs]))
             
-            experiments.sort(key=lambda e: e.acq_timestamp)
+            experiments.sort(key=lambda e: e.acq_timestamp if e.acq_timestamp is not None else 0)
             for expt in experiments:
                 date = expt.acq_timestamp
-                date_str = datetime.fromtimestamp(date).strftime('%Y-%m-%d')
+                date_str = datetime.fromtimestamp(date).strftime('%Y-%m-%d') if date is not None else None
+                time_str = 'None' if expt.acq_timestamp is None else '%.3f'%expt.acq_timestamp
                 slice = expt.slice
-                expt_item = pg.TreeWidgetItem(map(str, [date_str, expt.ext_id, '%0.3f'%expt.acq_timestamp, expt.rig_name, slice.species, expt.project_name, expt.target_region, slice.genotype, expt.acsf]))
+                expt_item = pg.TreeWidgetItem(map(str, [date_str, expt.ext_id, time_str, expt.rig_name, slice.species, expt.project_name, expt.target_region, slice.genotype, expt.acsf]))
                 expt_item.expt = expt
                 self.addTopLevelItem(expt_item)
 
