@@ -32,7 +32,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
         self.layout = pg.QtGui.QGridLayout()
         self.layout.setContentsMargins(3,3,3,3)
-        self.setGeometry(280, 130, 1500, 900)
+        self.setGeometry(100, 50, 1100, 700)
         self.setLayout(self.layout) 
 
         self.h_splitter = pg.QtGui.QSplitter(pg.QtCore.Qt.Horizontal)
@@ -68,6 +68,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         v_splitter = pg.QtGui.QSplitter(pg.QtCore.Qt.Vertical)
         for widget in [self.ptree, self.save_btn]:
             v_splitter.addWidget(widget)
+        v_splitter.setStretchFactor(0,5)
 
 
         self.selectTabWidget.addTab(v_splitter, "Current Pair")
