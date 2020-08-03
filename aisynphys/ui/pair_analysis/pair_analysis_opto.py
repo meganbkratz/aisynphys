@@ -280,61 +280,67 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
     def save_to_db(self):
 
-        synapse_call = self.pair_param['Synapse call']
-        if synapse_call == 'not specified':
-            raise Exception("Please make a synapse call before saving to db.")
+        try:
+            synapse_call = self.pair_param['Synapse call']
+            if synapse_call == 'not specified':
+                raise Exception("Please make a synapse call before saving to db.")
 
-        expt_id = self.pair.experiment.ext_id
-        pre_cell_id = self.pair.pre_cell.ext_id
-        post_cell_id = self.pair.post_cell.ext_id
-        meta = {
-            'expt_id': self.pair.experiment.ext_id,
-            'pre_cell_id': self.pair.pre_cell.ext_id,
-            'post_cell_id': self.pair.post_cell.ext_id,
-            'synapse_type': synapse_call,
-            'gap_junction': self.pair_param['Gap junction call'],
-            'comments': self.comment_param[''],
-            'categories':{str(key):None for key in self.sorted_responses.keys()}
-        }
+            expt_id = self.pair.experiment.ext_id
+            pre_cell_id = self.pair.pre_cell.ext_id
+            post_cell_id = self.pair.post_cell.ext_id
+            meta = {
+                'expt_id': self.pair.experiment.ext_id,
+                'pre_cell_id': self.pair.pre_cell.ext_id,
+                'post_cell_id': self.pair.post_cell.ext_id,
+                'synapse_type': synapse_call,
+                'gap_junction': self.pair_param['Gap junction call'],
+                'comments': self.comment_param[''],
+                'categories':{str(key):None for key in self.sorted_responses.keys()}
+            }
 
-        if synapse_call is not None:
-            for key in self.sorted_responses.keys():
-                param = self.category_param.child(str(key))
-                if param['status'] in ['done', 'previously analyzed']:
-                    meta['categories'][str(key)]={
-                        'initial_parameters':param.initial_params,
-                        'fit_parameters': param.fit,
-                        'fit_pass': param['user_passed_fit'],
-                        'n_events': param['number_of_events'],
-                        'event_times':param.event_times
-                        }
-        
-        session = notes_db.db.session(readonly=False)
-        record = notes_db.get_pair_notes_record(expt_id, pre_cell_id, post_cell_id, session=session)
+            if synapse_call is not None:
+                for key in self.sorted_responses.keys():
+                    param = self.category_param.child(str(key))
+                    if param['status'] in ['done', 'previously analyzed']:
+                        meta['categories'][str(key)]={
+                            'initial_parameters':param.initial_params,
+                            'fit_parameters': param.fit,
+                            'fit_pass': param['user_passed_fit'],
+                            'n_events': param['number_of_events'],
+                            'event_times':param.event_times
+                            }
+            
+            session = notes_db.db.session(readonly=False)
+            record = notes_db.get_pair_notes_record(expt_id, pre_cell_id, post_cell_id, session=session)
 
-        if record is None:
-            entry = notes_db.PairNotes(
-                expt_id=expt_id,
-                pre_cell_id=pre_cell_id,
-                post_cell_id=post_cell_id, 
-                notes=meta,
-                modification_time=datetime.datetime.now(),
-            )
-            session.add(entry)
-            session.commit()
-        else:
-            #self.print_pair_notes(meta, record.notes)
-            #msg = pg.QtGui.QMessageBox.question(None, "Pair Analysis", 
-            #    "The record you are about to save conflicts with what is in the Pair Notes database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?",
-            #    pg.QtGui.QMessageBox.Yes | pg.QtGui.QMessageBox.No)
-            msg = CompareDialog("There is already a record for %s in the %s database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?"%(self.pair, notes_db.name), OrderedDict([('Previously saved',record.notes), ('New',meta)]))
-            if msg == pg.QtGui.QDialog.Accepted:
-                record.notes = meta
-                record.modification_time = datetime.datetime.now()
-                session.commit() 
+            if record is None:
+                entry = notes_db.PairNotes(
+                    expt_id=expt_id,
+                    pre_cell_id=pre_cell_id,
+                    post_cell_id=post_cell_id, 
+                    notes=meta,
+                    modification_time=datetime.datetime.now(),
+                )
+                session.add(entry)
+                session.commit()
             else:
-                raise Exception('Save Cancelled')
-        session.close()
+                #self.print_pair_notes(meta, record.notes)
+                #msg = pg.QtGui.QMessageBox.question(None, "Pair Analysis", 
+                #    "The record you are about to save conflicts with what is in the Pair Notes database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?",
+                #    pg.QtGui.QMessageBox.Yes | pg.QtGui.QMessageBox.No)
+                msg = CompareDialog("There is already a record for %s in the %s database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?"%(self.pair, notes_db.name), OrderedDict([('Previously saved',record.notes), ('New',meta)]))
+                if msg == pg.QtGui.QDialog.Accepted:
+                    record.notes = meta
+                    record.modification_time = datetime.datetime.now()
+                    session.commit() 
+                else:
+                    raise Exception('Save Cancelled')
+            session.close()
+            self.save_btn.success('Saved.')
+
+        except:
+            self.save_btn.failure('Error')
+            raise
 
 class CompareDialog(pg.QtGui.QDialog):
 
@@ -429,7 +435,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         self.host = host
         self.param_tree = pg.parametertree.ParameterTree()
         self.plot_grid=PlotGrid()
-        self.add_btn = pg.QtGui.QPushButton("Add analysis")
+        self.add_btn = pg.FeedbackButton("Add analysis")
         self.add_btn.clicked.connect(self.add_analysis_btn_clicked)
 
         v_widget = pg.QtGui.QWidget()
@@ -648,32 +654,38 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             self.plot_grid[(1,0)].setLabel('left', units='V')
 
     def add_analysis_btn_clicked(self):
+        try:
 
-        fit = None
-        fit_pass = None
-        initial_params=None
-        evs = [] ## sanity check that we only have one event fit
-        for p in self.event_params.children():
-            if p._should_have_fit:
-                fit_pass = p['Fit passes qc']
-                if fit_pass is None:
-                    raise Exception('Please specify whether fit passes qc for %s'%p.name())
+            fit = None
+            fit_pass = None
+            initial_params=None
+            evs = [] ## sanity check that we only have one event fit
+            for p in self.event_params.children():
+                if p._should_have_fit:
+                    fit_pass = p['Fit passes qc']
+                    if fit_pass is None:
+                        raise Exception('Please specify whether fit passes qc for %s'%p.name())
 
-                evs.append(p.name())
-                fit = p._fit_values
-                initial_params=p._initial_fit_guesses
-                
-        if len(evs) > 1:
-            ### need to figure out why this is happening
-            raise Exception('Error: More than one fit found. This is a bug')
+                    evs.append(p.name())
+                    fit = p._fit_values
+                    initial_params=p._initial_fit_guesses
+                    
+            if len(evs) > 1:
+                ### need to figure out why this is happening
+                raise Exception('Error: More than one fit found. This is a bug')
 
-        res = {'category_name':self.key,
-               'fit': fit,
-               'fit_pass':fit_pass,
-               'initial_params':initial_params,
-               'n_events':len(self.event_params.children()),
-               'event_times':[p['user_latency'] for p in self.event_params.children()]}
-        self.sigNewAnalysisAvailable.emit(res)
+            res = {'category_name':self.key,
+                   'fit': fit,
+                   'fit_pass':fit_pass,
+                   'initial_params':initial_params,
+                   'n_events':len(self.event_params.children()),
+                   'event_times':[p['user_latency'] for p in self.event_params.children()]}
+            self.sigNewAnalysisAvailable.emit(res)
+            self.add_btn.success('Added.')
+
+        except:
+            self.add_btn.failure('Error')
+            raise
 
 
 
