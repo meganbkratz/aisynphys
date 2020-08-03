@@ -3,6 +3,7 @@ from datetime import datetime
 import pyqtgraph as pg
 
 from aisynphys.database import default_db as db
+from aisynphys.data import data_notes_db as notes_db
 
 
 class ExperimentBrowser(pg.TreeWidget):
@@ -21,7 +22,7 @@ class ExperimentBrowser(pg.TreeWidget):
         self.setDragDropMode(self.NoDragDrop)
         self._last_expanded = None
         
-    def populate(self, experiments=None, all_pairs=False, synapses=False):
+    def populate(self, experiments=None, all_pairs=False, synapses=False, check_notes_db=False):
         """Populate the browser with a list of experiments.
         
         Parameters
@@ -32,6 +33,8 @@ class ExperimentBrowser(pg.TreeWidget):
             If False, then pairs with no qc-passed pulse responses are excluded
         synapses : bool
             If True, then only synaptically connected pairs are shown
+        check_notes_db : bool | False
+            If True, display an 'x' next to the synapse call for a pair if the pair is already in the notes db.
         """
         with pg.BusyCursor():
             # if all_pairs is set to True, all pairs from an experiment will be included regardless of whether they have data
@@ -67,6 +70,10 @@ class ExperimentBrowser(pg.TreeWidget):
                         continue
                     cells = '%s => %s' % (pair.pre_cell.ext_id, pair.post_cell.ext_id)
                     conn = {True:"syn", False:"-", None:"?"}[pair.has_synapse]
+                    if check_notes_db:
+                        rec = notes_db.get_pair_notes_record(expt.ext_id, pair.pre_cell.ext_id, pair.post_cell.ext_id)
+                        if rec is not None:
+                            conn += '\t' + 'x'
                     types = 'L%s %s => L%s %s' % (pair.pre_cell.target_layer or "?", pair.pre_cell.cre_type, pair.post_cell.target_layer or "?", pair.post_cell.cre_type)
                     pair_item = pg.TreeWidgetItem([cells, conn, types])
                     expt_item.addChild(pair_item)
