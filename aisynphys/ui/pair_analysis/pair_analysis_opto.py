@@ -582,9 +582,11 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         init_params = {'rise_time':rise_time, 'amp':amp}
         fit = fit_psp(filtered, (window[0], window[1]), self.clamp_mode, sign=0, exp_baseline=False, init_params=init_params, fine_search_spacing=filtered.dt, fine_search_window_width=100e-6)
 
-        self.plot_fit(event_param, fit.values, init_params)
+        fit_vals = fit.values
+        fit_vals.update(nrmse=fit.nrmse())
+        self.plot_fit(event_param, fit_vals, init_params)
         ## display fit params
-        self.update_fit_param_display(event_param, fit.values)
+        self.update_fit_param_display(event_param, fit_vals)
 
     def plot_fit(self, event_param, fit_values, init_values):
         ## plot fit
@@ -608,11 +610,11 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         param.child('Fit results').child('rise time').setValue(pg.siFormat(v['rise_time'], suffix='s'))
         param.child('Fit results').child('decay tau').setValue(pg.siFormat(v['decay_tau'], suffix='s'))
 
-        nrmse = v.get('nrmse')
+        nrmse=v.get('nrmse')
         if nrmse is None:
             param.child('Fit results').child('NRMSE').setValue('nan')
         else:
-            param.child('Fit results').child('NRMSE').setValue('%0.2f'%nmrse)
+            param.child('Fit results').child('NRMSE').setValue('%0.2f'%nrmse)
 
 
     def plot_responses(self, responses):
