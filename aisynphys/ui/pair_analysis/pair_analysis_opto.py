@@ -183,6 +183,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                 p.child('number_of_events').show()
                 p.child('user_passed_fit').setValue(data['fit_pass'])
                 p.child('user_passed_fit').show()
+                p.fit = data['fit_parameters']
+                p.initial_params = data['initial_parameters']
+                p.event_times = data['event_times']
                 self.analyzers[cat].load_saved_data(data)
 
         if len(saved_categories) > 0: # sanity check
@@ -330,7 +333,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                 #    "The record you are about to save conflicts with what is in the Pair Notes database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?",
                 #    pg.QtGui.QMessageBox.Yes | pg.QtGui.QMessageBox.No)
                 msg = CompareDialog("There is already a record for %s in the %s database.\nYou can see the differences highlighted in red.\nWould you like to overwrite?"%(self.pair, notes_db.name), OrderedDict([('Previously saved',record.notes), ('New',meta)]))
-                if msg == pg.QtGui.QDialog.Accepted:
+                if msg.result() == pg.QtGui.QDialog.Accepted:
                     record.notes = meta
                     record.modification_time = datetime.datetime.now()
                     session.commit() 
