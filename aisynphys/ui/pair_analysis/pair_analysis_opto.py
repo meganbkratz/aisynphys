@@ -582,38 +582,43 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
 
 
-    def fit_event(self, btn_param):
-        event_param = btn_param.parent()
-        i = int(event_param.name()[-1])
-        latency = event_param['user_latency']
+    # def fit_event(self, btn_param):
+    #     event_param = btn_param.parent()
+    #     i = int(event_param.name()[-1])
+    #     latency = event_param['user_latency']
 
-        window = [latency - 0.0002, latency+0.0002]
+    #     window = [latency - 0.0002, latency+0.0002]
 
-        #### fit snippet of original data, but feed fitting algorithm good guesses for amp and rise time 
-        ## basically make travis's measurments, then try to fit to get tau
-        if i == len(self.event_params.children())-1: ## last event
-            data = self.average_response.time_slice(latency-0.001, latency+0.05)
-        else:
-            for param in self.event_params.children():
-                if int(param.name()[-1]) == i+1:
-                    next_latency = param['user_latency']
-                    break
-            data = self.average_response.time_slice(latency-0.001, next_latency)
+    #     #### fit snippet of original data, but feed fitting algorithm good guesses for amp and rise time 
+    #     ## basically make travis's measurments, then try to fit to get tau
+    #     if i == len(self.event_params.children())-1: ## last event
+    #         data = self.average_response.time_slice(latency-0.001, latency+0.05)
+    #     else:
+    #         for param in self.event_params.children():
+    #             if int(param.name()[-1]) == i+1:
+    #                 next_latency = param['user_latency']
+    #                 break
+    #         data = self.average_response.time_slice(latency-0.001, next_latency)
 
-        filtered = filters.bessel_filter(data, 6000, order=4, btype='low', bidir=True)
+    #     filtered = filters.bessel_filter(data, 6000, order=4, btype='low', bidir=True)
 
-        peak_ind = np.argwhere(max(abs(filtered.data))==abs(filtered.data))[0][0]
-        peak_time = filtered.time_at(peak_ind)
-        rise_time = peak_time-(latency)
-        amp = filtered.value_at(peak_time) - filtered.value_at(latency)
-        init_params = {'rise_time':rise_time, 'amp':amp}
-        fit = fit_psp(filtered, (window[0], window[1]), self.clamp_mode, sign=0, exp_baseline=False, init_params=init_params, fine_search_spacing=filtered.dt, fine_search_window_width=100e-6)
+    #     lat_index = filtered.index_at(latency)
+    #     if max(abs(filtered.data[:lat_index])) > max(abs(filtered.data[lat_index:])): ## there is lots going on in the baseline
+    #         ## cut it off
+    #         filtered = filtered[lat_index-int(0.0002/filtered.dt):]
+    #     #ev = filtered[lat_index:]
+    #     peak_ind = np.argwhere(max(abs(filtered.data))==abs(filtered.data))[0][0]
+    #     peak_time = filtered.time_at(peak_ind)
+    #     rise_time = peak_time-(latency)
+    #     amp = filtered.value_at(peak_time) - filtered.value_at(latency)
+    #     init_params = {'rise_time':rise_time, 'amp':amp}
+    #     fit = fit_psp(filtered, (window[0], window[1]), self.clamp_mode, sign=0, exp_baseline=False, init_params=init_params, fine_search_spacing=filtered.dt, fine_search_window_width=100e-6)
 
-        fit_vals = fit.values
-        fit_vals.update(nrmse=fit.nrmse())
-        self.plot_fit(event_param, fit_vals, init_params)
-        ## display fit params
-        self.update_fit_param_display(event_param, fit_vals)
+    #     fit_vals = fit.values
+    #     fit_vals.update(nrmse=fit.nrmse())
+    #     self.plot_fit(event_param, fit_vals, init_params)
+    #     ## display fit params
+    #     self.update_fit_param_display(event_param, fit_vals)
 
 
     def plot_fit(self, event_param, fit_values):
