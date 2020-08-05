@@ -46,7 +46,9 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
                 'internal': expt.expt_info.get('internal'),
                 'acsf': expt.expt_info.get('solution'),
                 'target_temperature': expt.target_temperature,
-                'ext_id': expt.ext_id
+                'ext_id': expt.ext_id,
+                'date': expt.datetime,
+                'operator_name': expt.rig_operator,
             }
 
             expt_entry = db.Experiment(**fields)
