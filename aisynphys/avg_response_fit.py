@@ -1,11 +1,12 @@
 # coding: utf8
-import sys
+import sys, itertools
 from collections import OrderedDict
 import numpy as np
 import pyqtgraph as pg
 from neuroanalysis.data import TSeries, TSeriesList
 from neuroanalysis.baseline import float_mode
-from neuroanalysis.fitting import Psp, StackedPsp
+from neuroanalysis.fitting import Psp, StackedPsp, fit_psp
+import neuroanalysis.filter as filters
 from aisynphys.database import default_db as db
 import aisynphys.data.data_notes_db as notes_db
 from aisynphys.qc import spike_qc
@@ -231,3 +232,132 @@ def check_fit_qc_pass(fit_result, expected_params, clamp_mode):
             failures.append('%s error too large (%s != %s)' % (k, v1, v2))
 
     return len(failures) == 0, failures
+
+
+##### 2p opto average response analysis functions
+##### -------------------------------------------
+
+def sort_responses_2p(pulse_responses):
+    """Sort a list of pulse_responses into categories based on clamp mode, 
+    holding potential, and stimulation power.
+
+    Category keys are tuples of (clamp mode, holding potential, stimulation), 
+    for example ('ic', -70, 30.0). Stimulation power is reported as the command 
+    to the pockel cell. Stimulation power of None indicates that an electrode 
+    driving an action potential was the source of stimulation.
+
+    In order to pass qc, responses must have response.in_qc_pass or 
+    response.ex_qc_pass set to True, and also have an offset distance < 10 um. 
+
+    Return a nested dictionary:
+    {(category1):{'qc_pass':[responses that pass qc], 'qc_fail':[responses that fail qc]},
+    """
+    ex_limits = [-80e-3, -60e-3]
+    in_limits1 = [-60e-3, -45e-3]
+    in_limits2 = [-10e-3, 10e-3] ## some experiments were done with Cs+ and held at 0mv
+    distance_limit = 10e-6
+
+    modes = ['vc', 'ic']
+    holdings = [-70, -55, 0]
+    powers = []
+    for pr in pulse_responses:
+        if pr.stim_pulse.meta is None:
+            powers.append(None)
+        else:
+            powers.append(pr.stim_pulse.meta.get('pockel_cmd'))
+    powers = list(set(powers))
+    #powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses if pr.stim_pulse.meta is not None else None]))
+
+    keys = itertools.product(modes, holdings, powers)
+
+    ### Need to differentiate between laser-stimulated pairs and electrode-electode pairs
+    ## I would like to do this in a more specific way, ie: if the device type == Fidelity. -- this is in the pipeline branch of aisynphys 
+    ## But that needs to wait until devices are in the db. (but also aren't they?)
+    ## Also, we're going to have situations where the same pair has laser responses and 
+    ##   electrode responses when we start getting 2P guided pair patching, and this will fail then
+    # if pulse_responses[0].pair.pre_cell.electrode is None:  
+    #     powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses]))
+    #     keys = itertools.product(modes, holdings, powers)
+    # else:
+    #     keys = itertools.product(modes, holdings)
+
+    sorted_responses = OrderedDict({k:{'qc_pass':[], 'qc_fail':[]} for k in keys})
+
+    qc = {False: 'qc_fail', True: 'qc_pass'}
+
+    for pr in pulse_responses:
+        clamp_mode = pr.recording.patch_clamp_recording.clamp_mode
+        holding = pr.recording.patch_clamp_recording.baseline_potential
+        power = pr.stim_pulse.meta.get('pockel_cmd') if pr.stim_pulse.meta is not None else None
+
+        offset_distance = pr.stim_pulse.meta.get('offset_distance', 0) if pr.stim_pulse.meta is not None else 0
+        if offset_distance is None: ## early photostimlogs didn't record the offset between the stimulation plane and the cell
+            offset_distance = 0
+
+        if in_limits1[0] <= holding < in_limits1[1]:
+            qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
+            sorted_responses[(clamp_mode, -55, power)][qc_pass].append(pr)
+
+        elif in_limits2[0] <= holding < in_limits2[1]:
+            qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
+            sorted_responses[(clamp_mode, 0, power)][qc_pass].append(pr)
+
+        elif ex_limits[0] <= holding < ex_limits[1]:
+            qc_pass = qc[pr.ex_qc_pass and offset_distance < distance_limit]
+            sorted_responses[(clamp_mode, -70, power)][qc_pass].append(pr)
+
+    return sorted_responses
+
+
+def fit_event_2p(avg_response, clamp_mode, latencies, event_index=0):
+    """Event fitting algorithm for two-photon repsonses.
+
+    Arguments:
+    ----------
+    avg_response : TSeries
+        The trace of the data to be fit.
+    clamp_mode : str
+        The clamp mode of the data. Options: 'ic', 'vc'
+    latencies : list
+        A sorted list of time values corresponding to the start of events in avg_response
+    event_index : int | 0
+        The index of the latency (in latencies) of the event to be fit. 
+
+    Returns:
+    --------
+    fit : lmfit ModelResult
+        The resulting PSP fit
+    """
+    latency = latencies[event_index]
+    if latency == latencies[-1]:
+        latencies.append(latency+0.05) ## create a next latency stop point
+    window = [latency - 0.0002, latency+0.0002]
+
+    data = avg_response.time_slice(latency-0.001, latencies[event_index+1])
+    filtered = filters.bessel_filter(data, 6000, order=4, btype='low', bidir=True)
+
+    peak_ind = np.argwhere(max(abs(filtered.data))==abs(filtered.data))[0][0]
+    peak_time = filtered.time_at(peak_ind)
+    rise_time = peak_time-(latency)
+    amp = filtered.value_at(peak_time) - filtered.value_at(latency)
+    init_params = {'rise_time':rise_time, 'amp':amp}
+
+    fit = fit_psp(filtered, (window[0], window[1]), clamp_mode, sign=0, exp_baseline=False, init_params=init_params, fine_search_spacing=filtered.dt, fine_search_window_width=100e-6)
+    fit.opto_init_params = init_params ## attach parameters that we feed in here; fit already has an init_params that gets filled in inside fit_psp
+
+    return fit
+
+def get_average_response_2p(pulse_responses):
+    """Given a list of pulse responses, determine whether to align them by pulse or by spike, and return the mean."""
+
+    prl = PulseResponseList(pulse_responses)
+
+    has_pre_data = pulse_responses[0].pre_tseries is not None
+
+    if has_pre_data:
+        return prl.post_tseries(align='spike', bsub=True).mean()
+    else:
+        return prl.post_tseries(align='pulse', bsub=True).mean()
+
+
+

@@ -12,7 +12,7 @@ from neuroanalysis.data.dataset import TSeries
 from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine, comment_hashtag
 from aisynphys.ui.experiment_selector import ExperimentSelector
 from aisynphys.ui.experiment_browser import ExperimentBrowser
-from aisynphys.avg_response_fit import get_pair_avg_fits, response_query
+from aisynphys.avg_response_fit import response_query, sort_responses_2p, get_average_response_2p, fit_event_2p
 
 from aisynphys.database import default_db as db
 from aisynphys.data import data_notes_db as notes_db
@@ -153,7 +153,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.pair_param.child('Gap junction call').setValue(pair.has_electrical)
             
 
-            sorted_responses = self.sort_responses(self.pulse_responses)
+            sorted_responses = sort_responses_2p(self.pulse_responses)
 
             # filter out categories with no responses
             self.sorted_responses = OrderedDict()
@@ -191,63 +191,64 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         if len(saved_categories) > 0: # sanity check
             raise Exception("Previously saved categories %s, but no analyzer was found for these."%saved_categories)
 
-    def sort_responses(self, pulse_responses):
-        ex_limits = [-80e-3, -60e-3]
-        in_limits1 = [-60e-3, -45e-3]
-        in_limits2 = [-10e-3, 10e-3] ## some experiments were done with Cs+ and held at 0mv
-        distance_limit = 10e-6
+    # @classmethod
+    # def sort_responses(cls, pulse_responses):
+    #     ex_limits = [-80e-3, -60e-3]
+    #     in_limits1 = [-60e-3, -45e-3]
+    #     in_limits2 = [-10e-3, 10e-3] ## some experiments were done with Cs+ and held at 0mv
+    #     distance_limit = 10e-6
 
-        modes = ['vc', 'ic']
-        holdings = [-70, -55, 0]
-        powers = []
-        for pr in pulse_responses:
-            if pr.stim_pulse.meta is None:
-                powers.append(None)
-            else:
-                powers.append(pr.stim_pulse.meta.get('pockel_cmd'))
-        powers = list(set(powers))
-        #powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses if pr.stim_pulse.meta is not None else None]))
+    #     modes = ['vc', 'ic']
+    #     holdings = [-70, -55, 0]
+    #     powers = []
+    #     for pr in pulse_responses:
+    #         if pr.stim_pulse.meta is None:
+    #             powers.append(None)
+    #         else:
+    #             powers.append(pr.stim_pulse.meta.get('pockel_cmd'))
+    #     powers = list(set(powers))
+    #     #powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses if pr.stim_pulse.meta is not None else None]))
 
-        keys = itertools.product(modes, holdings, powers)
+    #     keys = itertools.product(modes, holdings, powers)
 
-        ### Need to differentiate between laser-stimulated pairs and electrode-electode pairs
-        ## I would like to do this in a more specific way, ie: if the device type == Fidelity. -- this is in the pipeline branch of aisynphys 
-        ## But that needs to wait until devices are in the db. (but also aren't they?)
-        ## Also, we're going to have situations where the same pair has laser responses and 
-        ##   electrode responses when we start getting 2P guided pair patching, and this will fail then
-        # if pulse_responses[0].pair.pre_cell.electrode is None:  
-        #     powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses]))
-        #     keys = itertools.product(modes, holdings, powers)
+    #     ### Need to differentiate between laser-stimulated pairs and electrode-electode pairs
+    #     ## I would like to do this in a more specific way, ie: if the device type == Fidelity. -- this is in the pipeline branch of aisynphys 
+    #     ## But that needs to wait until devices are in the db. (but also aren't they?)
+    #     ## Also, we're going to have situations where the same pair has laser responses and 
+    #     ##   electrode responses when we start getting 2P guided pair patching, and this will fail then
+    #     # if pulse_responses[0].pair.pre_cell.electrode is None:  
+    #     #     powers = list(set([pr.stim_pulse.meta.get('pockel_cmd') for pr in pulse_responses]))
+    #     #     keys = itertools.product(modes, holdings, powers)
 
-        # else:
-        #     keys = itertools.product(modes, holdings)
+    #     # else:
+    #     #     keys = itertools.product(modes, holdings)
 
-        sorted_responses = OrderedDict({k:{'qc_pass':[], 'qc_fail':[]} for k in keys})
+    #     sorted_responses = OrderedDict({k:{'qc_pass':[], 'qc_fail':[]} for k in keys})
 
-        qc = {False: 'qc_fail', True: 'qc_pass'}
+    #     qc = {False: 'qc_fail', True: 'qc_pass'}
 
-        for pr in pulse_responses:
-            clamp_mode = pr.recording.patch_clamp_recording.clamp_mode
-            holding = pr.recording.patch_clamp_recording.baseline_potential
-            power = pr.stim_pulse.meta.get('pockel_cmd') if pr.stim_pulse.meta is not None else None
+    #     for pr in pulse_responses:
+    #         clamp_mode = pr.recording.patch_clamp_recording.clamp_mode
+    #         holding = pr.recording.patch_clamp_recording.baseline_potential
+    #         power = pr.stim_pulse.meta.get('pockel_cmd') if pr.stim_pulse.meta is not None else None
 
-            offset_distance = pr.stim_pulse.meta.get('offset_distance', 0) if pr.stim_pulse.meta is not None else 0
-            if offset_distance is None: ## early photostimlogs didn't record the offset between the stimulation plane and the cell
-                offset_distance = 0
+    #         offset_distance = pr.stim_pulse.meta.get('offset_distance', 0) if pr.stim_pulse.meta is not None else 0
+    #         if offset_distance is None: ## early photostimlogs didn't record the offset between the stimulation plane and the cell
+    #             offset_distance = 0
 
-            if in_limits1[0] <= holding < in_limits1[1]:
-                qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
-                sorted_responses[(clamp_mode, -55, power)][qc_pass].append(pr)
+    #         if in_limits1[0] <= holding < in_limits1[1]:
+    #             qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
+    #             sorted_responses[(clamp_mode, -55, power)][qc_pass].append(pr)
 
-            elif in_limits2[0] <= holding < in_limits2[1]:
-                qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
-                sorted_responses[(clamp_mode, 0, power)][qc_pass].append(pr)
+    #         elif in_limits2[0] <= holding < in_limits2[1]:
+    #             qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
+    #             sorted_responses[(clamp_mode, 0, power)][qc_pass].append(pr)
 
-            elif ex_limits[0] <= holding < ex_limits[1]:
-                qc_pass = qc[pr.ex_qc_pass and offset_distance < distance_limit]
-                sorted_responses[(clamp_mode, -70, power)][qc_pass].append(pr)
+    #         elif ex_limits[0] <= holding < ex_limits[1]:
+    #             qc_pass = qc[pr.ex_qc_pass and offset_distance < distance_limit]
+    #             sorted_responses[(clamp_mode, -70, power)][qc_pass].append(pr)
 
-        return sorted_responses
+    #     return sorted_responses
 
 
     def create_new_analyzers(self, categories):
@@ -473,7 +474,9 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         for p in self.event_params.children():
             if p._should_have_fit:
-                self.plot_fit(p, data['fit_parameters'], data['initial_parameters'])
+                self.plot_fit(p, data['fit_parameters'])
+                p._fit_values = data['fit_parameters']
+                p._initial_fit_guesses = data['initial_parameters']
                 self.update_fit_param_display(p, data['fit_parameters'])
                 p.child('Fit passes qc').setValue({'':None, 'True':True, 'False':False}.get(data['fit_pass']))
 
@@ -502,7 +505,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             {'name': 'Fit event', 'type':'action', 'visible':visible, 'renamable':False}
             ])
         self.event_params.addChild(param)
-        param.child('Fit event').sigActivated.connect(self.fit_event)
+        param.child('Fit event').sigActivated.connect(self.fit_event_btn_clicked)
         param.child('user_latency').sigValueChanged.connect(self.event_latency_changed)
         self.plot_grid[(0,0)].addItem(param.child('user_latency').line)
         param.sigRemoved.connect(self.event_param_removed)
@@ -557,6 +560,27 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             for name in ['amplitude', 'latency', 'rise time', 'decay tau', 'NRMSE']:
                 param.child('Fit results').child(name).setValue('')
 
+    def fit_event_btn_clicked(self, btn_param):
+        event_param = btn_param.parent()
+        i = int(event_param.name()[-1])
+        latency = event_param['user_latency']
+
+        latencies = [p['user_latency'] for p in self.event_params.children()]
+
+        fit = fit_event_2p(self.average_response, self.clamp_mode, latencies, i)
+
+        fit_vals = fit.values
+        fit_vals.update(nrmse=fit.nrmse())
+
+        ## store these here so we can save them later
+        event_param._fit_values = fit_vals
+        event_param._initial_fit_guesses = fit.opto_init_params
+
+        ### update plot and param display
+        self.plot_fit(event_param, fit_vals)
+        self.update_fit_param_display(event_param, fit_vals)
+
+
 
     def fit_event(self, btn_param):
         event_param = btn_param.parent()
@@ -591,7 +615,8 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         ## display fit params
         self.update_fit_param_display(event_param, fit_vals)
 
-    def plot_fit(self, event_param, fit_values, init_values):
+
+    def plot_fit(self, event_param, fit_values):
         ## plot fit
         v = fit_values
         y=Psp.psp_func(self.average_response.time_values,v['xoffset'], v['yoffset'], v['rise_time'], v['decay_tau'], v['amp'], v['rise_power'])
@@ -599,8 +624,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         if hasattr(event_param, '_fit_plot_item'):
             self.plot_grid[(0,0)].removeItem(event_param._fit_plot_item)
         event_param._fit_plot_item = self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
-        event_param._fit_values = v
-        event_param._initial_fit_guesses = init_values
+
         
 
     def update_fit_param_display(self, param, v):
