@@ -270,8 +270,18 @@ class Experiment(object):
             if rgn is None or rgn.strip() != '':
                 rgn = self.expt_info.get('target_region', None)
         
-        corrected = {'V1': 'VisP'}.get(rgn, rgn)
-        return corrected
+        # correct some alternative / misspelled region names
+        corrections = {
+            'v1': 'VisP',
+            'tcx': 'TCx',
+            'fcx': 'FCx',
+            'pcx': 'PCx',
+            'ocx': 'OCx',
+        }
+        if rgn is not None:
+            rgn = corrections.get(rgn.lower(), rgn)
+
+        return rgn
 
 
     @property
