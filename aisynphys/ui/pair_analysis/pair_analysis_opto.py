@@ -465,7 +465,10 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         self.event_params = pg.parametertree.Parameter.create(name="Events", type='group', addText='Add event')
         self.param_tree.addParameters(self.event_params)
-        self.event_params.sigAddNew.connect(self.add_event_param)
+        try:
+            self.event_params.sigAddNew.connect(self.add_event_param)
+        except AttributeError:
+            raise Exception('PairAnalysis requires Pyqtgraph 0.11.0 or greater. (current version is %s)'%str(pg.__version__))
 
     def load_saved_data(self, data):
         for time in data['event_times']:
