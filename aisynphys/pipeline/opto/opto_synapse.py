@@ -9,7 +9,7 @@ from ... import config
 from ..pipeline_module import DatabasePipelineModule
 from .opto_experiment import OptoExperimentPipelineModule
 from .opto_dataset import OptoDatasetPipelineModule
-#import aisynphys.data.data_notes_db as notes_db
+import aisynphys.data.data_notes_db as notes_db
 from ...avg_response_fit import get_pair_avg_fits
 
 
@@ -41,6 +41,28 @@ class OptoSynapsePipelineModule(DatabasePipelineModule):
             # only proceed if we have a synapse here            
             if not pair.has_synapse:
                 continue
+
+            fits = get_pair_avg_fits_opto(pair, session)
+
+            for (clamp_mode, holding, power), data in fits.items():
+
+                rec = db.AvgResponseFit(
+                    pair_id=pair.id,
+                    clamp_mode=clamp_mode,
+                    holding=holding,
+                    laser_power_command=power,
+                    nrmse=data['fit_result'].nrmse(),
+                    initial_xoffset=data['initial_latency'],
+                    manual_qc_pass=data['fit_qc_pass'],
+                    avg_data=fit['average'],
+                    
+
+
+
+                    )
+                for k in ['xoffset', 'yoffset', 'amp', 'rise_time', 'decay_tau', 'exp_amp', 'exp_tau']:
+                    setattr(rec, 'fit_'+k, data['fit_result'].best_values[k])
+
 
             
 
