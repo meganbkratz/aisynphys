@@ -153,13 +153,13 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.pair_param.child('Gap junction call').setValue(pair.has_electrical)
             
 
-            sorted_responses = sort_responses_2p(self.pulse_responses)
+            self.sorted_responses = sort_responses_2p(self.pulse_responses, exclude_empty=True)
 
-            # filter out categories with no responses
-            self.sorted_responses = OrderedDict()
-            for k, v in sorted_responses.items():
-                if len(v['qc_fail']) + len(v['qc_pass']) > 0:
-                    self.sorted_responses[k]=v
+            # # filter out categories with no responses
+            # self.sorted_responses = OrderedDict()
+            # for k, v in sorted_responses.items():
+            #     if len(v['qc_fail']) + len(v['qc_pass']) > 0:
+            #         self.sorted_responses[k]=v
 
             self.create_new_analyzers(self.sorted_responses.keys())
 
@@ -274,6 +274,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         param.fit = result['fit']
         param.event_times = result['event_times']
         param.initial_params = result['initial_params']
+        param.fit_event_index = result['fit_event_index']
 
     def plot_responses(self):        
         for i, key in enumerate(self.sorted_responses.keys()):
@@ -312,7 +313,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                             'fit_parameters': param.fit,
                             'fit_pass': param['user_passed_fit'],
                             'n_events': param['number_of_events'],
-                            'event_times':param.event_times
+                            'event_times':param.event_times,
+                            'fit_event_index':param.fit_event_index
                             }
             
             session = notes_db.db.session(readonly=False)
@@ -697,8 +699,9 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             fit = None
             fit_pass = None
             initial_params=None
+            event_index=None
             evs = [] ## sanity check that we only have one event fit
-            for p in self.event_params.children():
+            for i, p in enumerate(self.event_params.children()):
                 if p._should_have_fit:
                     fit_pass = p['Fit passes qc']
                     if fit_pass is None:
@@ -707,6 +710,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                     evs.append(p.name())
                     fit = p._fit_values
                     initial_params=p._initial_fit_guesses
+                    event_index = i
                     
             if len(evs) > 1:
                 ### need to figure out why this is happening
@@ -717,7 +721,8 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                    'fit_pass':fit_pass,
                    'initial_params':initial_params,
                    'n_events':len(self.event_params.children()),
-                   'event_times':[p['user_latency'] for p in self.event_params.children()]}
+                   'event_times':[p['user_latency'] for p in self.event_params.children()],
+                   'fit_event_index':event_index}
             self.sigNewAnalysisAvailable.emit(res)
             self.add_btn.success('Added.')
 

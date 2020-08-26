@@ -237,7 +237,7 @@ def check_fit_qc_pass(fit_result, expected_params, clamp_mode):
 ##### 2p opto average response analysis functions
 ##### -------------------------------------------
 
-def sort_responses_2p(pulse_responses):
+def sort_responses_2p(pulse_responses, exclude_empty=True):
     """Sort a list of pulse_responses into categories based on clamp mode, 
     holding potential, and stimulation power.
 
@@ -306,7 +306,15 @@ def sort_responses_2p(pulse_responses):
             qc_pass = qc[pr.ex_qc_pass and offset_distance < distance_limit]
             sorted_responses[(clamp_mode, -70, power)][qc_pass].append(pr)
 
-    return sorted_responses
+    if not exclude_empty:
+        return sorted_responses
+    else:    
+        # filter out categories with no responses
+        filtered_responses = OrderedDict()
+        for k, v in sorted_responses.items():
+            if len(v['qc_fail']) + len(v['qc_pass']) > 0:
+                filtered_responses[k]=v
+        return filtered_responses
 
 
 def fit_event_2p(avg_response, clamp_mode, latencies, event_index=0):
@@ -364,6 +372,115 @@ def get_average_response_2p(pulse_responses):
         return prl.post_tseries(align='spike', bsub=True).mean()
     else:
         return prl.post_tseries(align='pulse', bsub=True).mean()
+
+def get_pair_avg_fits_opto(pair, db_session):
+    '''Operations are:
+    
+    - Query all pulse responses for this pair, where the pulse train frequency was 
+      no faster than 50Hz
+    - Sort responses by clamp mode and holding potential, with the latter in two bins: -80 to -60 mV and -60 to -45 mV.
+      Responses are further separated into qc pass/fail for each bin. QC pass criteria:
+        - PR must have exactly one presynaptic spike with detectable latency
+        - Either PR.ex_qc_pass or .in_qc_pass must be True, depending on clamp mode / holding
+    - Generate average response for qc-passed pulses responses in each mode/holding combination
+    - Fit averages to PSP curve. If the latency was manually annotated for this synapse, then the curve
+      fit will have its latency constrained within ±100 μs.
+    - Compare to manually verified fit parameters; if these are not a close match OR if the 
+      manual fits were already failed, then *fit_qc_pass* will be False.
+
+    Returns
+    -------
+    results : dict
+        {(mode, holding, power): {
+            'responses': list of PulseResponse objects that pass qc
+            'average': TSeries, the average of responses,
+            'initial_latency': the latency of the event to be fit,
+            'all_latencies': list of user-set latency for each event
+            'fit_result': fit object,
+            'fit_qc_pass': Boolean, whether the fit passes,
+            'fit_qc_pass_reasons': list of strings explaining why fit_qc_pass failed (or passed?),
+            'expected_fit_params': dict of expected fit parameters,
+            'expected_fit_pass': whether the expected fit passed qc,
+            'avg_baseline_noise': ..,
+        }, ...}
+    '''
+
+### notes_rec.notes:"{
+#       "expt_id": "2019_05_29_exp2_TH", 
+#       "pre_cell_id": "Point 32", 
+#       "post_cell_id": "electrode_0", 
+#       "synapse_type": "ex", 
+#       "gap_junction": false, 
+#       "comments": "", 
+#       "categories": {
+#           "('ic', -70, 40.0)": {
+#               "initial_parameters": {"rise_time": 0.0014534752985781146, "amp": 0.00036418358100861396}, 
+#               "fit_parameters": {"xoffset": 0.008303698442252731, "yoffset": 2.1486003695600497e-05, "rise_time": 0.0018497438161078129, "decay_tau": 0.007747602882916505, "amp": 0.00037444707755288466, "rise_power": 2, "exp_amp": 0, "exp_tau": 1, "nrmse": 0.040841399293527765},
+#               "fit_pass": "True", 
+#               "n_events": "3", 
+#               "event_times": [0.008346524701421892, 0.011652299482281091, 0.016906683933368895]}, 
+#               "fit_event_index":0
+#           "('ic', -70, 50.0)": {"initial_parameters": {"rise_time": 0.0021330294285896983, "amp": 0.00034952583580172595}, "fit_parameters": {"xoffset": 0.0073498977724152925, "yoffset": -1.9205783347603367e-05, "rise_time": 0.002132751712697264, "decay_tau": 0.009671682481174188, "amp": 0.00034229503798775146, "rise_power": 2, "exp_amp": 0, "exp_tau": 1, "nrmse": 0.030614627629844873}, "fit_pass": "True", "n_events": "5", "event_times": [0.007266970571410307, 0.010716722307365367, 0.015020227464195443, 0.0245304433743027, 0.028549997232482797]}, "('ic', -70, 60.0)": null}}"
+    notes_rec = notes_db.get_pair_notes_record(pair.experiment.ext_id, pair.pre_cell.ext_id, pair.post_cell.ext_id)
+    if notes_rec is None:
+        raise Exception('No notes record saved in %s for %s. Fitting without annotated latencies is not implemented.' %(notes_db.name(), pair))
+    q = response_query(db_session, pair)
+    pulse_responses = [r.PulseResponse for r in q.all()]
+    sorted_responses = sort_responses_2p(pulse_responses, exclude_empty=True)
+
+    results = OrderedDict()
+
+    for key, responses in sorted_responses.items():
+        if len(responses['qc_pass']) == 0:
+            results[key] = None
+            continue
+        results[key] == OrderedDict()
+        results['responses'] = responses['qc_pass']
+        avg_response = get_average_response_2p(responses['qc_pass'])
+        results['average'] = average
+
+        notes = notes_rec.notes[str(key)]
+        results['initial_latency'] = notes['event_times'][notes['fit_event_index']]
+        results['all_latencies'] = notes['event_times']
+        clamp_mode=key[0]
+        fit = fit_event_2p(avg_response, clamp_mode, notes['event_times'], event_index=notes['fit_event_index'])
+        results['fit_result'] = fit
+
+        # compare to manually-verified results
+        # if notes is None: ## Removed b/c we error out early if there's no notes record because we need latencies to calculate a fit.
+        #     qc_pass = False
+        #     reasons = ['no data notes entry']
+        #     expected_fit_params = None
+        #     expected_fit_pass = None
+        if notes['fit_pass'] is not True:
+            qc_pass = False
+            reasons = ['data notes fit failed qc']
+            expected_fit_params = None
+            expected_fit_pass = False
+        else:
+            expected_fit_params = notes['fit_parameters']
+            expected_fit_pass = True
+            qc_pass, reasons = check_fit_qc_pass(fit, expected_fit_params, clamp_mode)
+            if not qc_pass:
+                print("%s %s: %s" % (str(pair), str(key), '; '.join(reasons)))
+
+        results['fit_qc_pass'] = qc_pass
+        results['fit_qc_pass_reasons'] = reasons
+        results['expected_fit_params'] = expected_fit_params
+        results['expected_fit_pass'] = expected_fit_pass
+
+        # measure baseline noise from beginning of average to 1 ms before start of fit
+        avg_baseline_noise = avg_response.time_slice(avg_response.t0, notes['event_times'][notes['fit_event_index']-1e-3]).data.std()
+        results['avg_baseline_noise'] = avg_baseline_noise
+
+    return results
+
+
+
+
+
+
+
 
 
 
