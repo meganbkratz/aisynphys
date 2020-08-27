@@ -74,6 +74,19 @@ def log(msg):
     with open(os.path.join(config.synphys_data, 'sync_log'), 'ab') as log_fh:
         log_fh.write((msg+'\n').encode('utf8'))
 
+def _sync_paths_recursive(source, target, changes):
+    """Recursive version of _sync_paths"""
+    skipped = 0
+
+    skipped += _sync_paths(source, target, changes)
+
+    for fname in os.listdir(source):
+        src_path = os.path.join(source, fname)
+        if os.path.isdir(src_path):
+            skipped += _sync_paths_recursive(src_path, os.path.join(target, fname), changes)
+
+    return skipped
+
 
 def _sync_paths(source, target, changes):
     """Non-recursive directory sync.
