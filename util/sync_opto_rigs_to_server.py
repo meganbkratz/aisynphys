@@ -130,7 +130,7 @@ if __name__ == '__main__':
 
     else:
         # synchronize just the specified path(s)
-        log = sync_experiments(paths)
+        log, changed_paths = sync_day_folders(paths)
     
     errs = [change for site in log for change in site[1] if change[0] == 'error']
     print("\n----- DONE ------\n   %d errors" % len(errs))
