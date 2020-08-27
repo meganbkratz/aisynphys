@@ -71,9 +71,7 @@ def sync_day(day_dir):
         # name may already be taken by another rig.)
 
         ## real:
-        #server_expt_path = os.path.join(config.synphys_data, get_server_path(day_dir))
-        ## testing:
-        server_expt_path = os.path.join(config.synphys_data, '..', 'backups', get_server_path(day_dir))
+        server_expt_path = os.path.join(config.synphys_data, get_server_path(day_dir))
         
         mp_sync.log("    using server path: %s" % server_expt_path)
         skipped += mp_sync._sync_paths_recursive(day_dir, server_expt_path, changes)
