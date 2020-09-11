@@ -140,7 +140,8 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         for i,pulse in enumerate(pulses):
                             # Record information about all pulses, including test pulse.
                             t0, t1 = pulse.meta['pulse_edges']
-                            resampled = pulse['primary'].resample(sample_rate=20000)
+                            sr = min(pulse['primary'].sample_rate, 20000)
+                            resampled = pulse['primary'].resample(sample_rate=sr)
                             
                             clock_time = t0 + datetime_to_timestamp(rec_entry.start_time)
                             prev_pulse_dt = clock_time - last_stim_pulse_time.get(cell_entry.ext_id, -np.inf)
@@ -410,7 +411,8 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                             if resp['in_qc_pass']:
                                 pair_entry.n_in_test_spikes += 1
                             
-                        resampled = resp['response']['primary'].resample(sample_rate=20000)
+                        sr = min(resp['response']['primary'].sample_rate, 20000)
+                        resampled = resp['response']['primary'].resample(sample_rate=sr)
                         resp_entry = db.PulseResponse(
                             recording=rec_entries[post_rec.device_id],
                             stim_pulse=all_pulse_entries[stim_rec.device_id][resp['pulse_n']],
@@ -430,7 +432,8 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
 
                             # pull data and run qc if needed
                             if key not in baseline_qc_cache:
-                                data = post_rec['primary'].time_slice(start, stop).resample(sample_rate=db.default_sample_rate).data
+                                sr = min(post_rec['primary'].sample_rate, db.default_sample_rate)
+                                data = post_rec['primary'].time_slice(start, stop).resample(sample_rate=sr).data
                                 ex_qc_pass, in_qc_pass, qc_failures = qc.opto_pulse_response_qc_pass(post_rec, [start, stop])
                                 baseline_qc_cache[key] = (data, ex_qc_pass, in_qc_pass)
                             else:
