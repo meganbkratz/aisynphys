@@ -73,7 +73,7 @@ class ExperimentBrowser(pg.TreeWidget):
                     conn = {True:"syn", False:"-", None:"?"}[pair.has_synapse]
                     if check_notes_db:
                         rec = notes_db.get_pair_notes_record(expt.ext_id, pair.pre_cell.ext_id, pair.post_cell.ext_id)
-                        if rec is not None and rec.modification_time is not None:
+                        if rec is not None:
                             conn += '\t' + 'x'
                     types = 'L%s %s => L%s %s' % (pair.pre_cell.target_layer or "?", pair.pre_cell.cre_type, pair.post_cell.target_layer or "?", pair.post_cell.cre_type)
                     pair_item = pg.TreeWidgetItem([cells, conn, types])

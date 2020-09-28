@@ -12,7 +12,6 @@ from neuroanalysis.data.dataset import TSeries
 from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine, comment_hashtag
 from aisynphys.ui.experiment_selector import ExperimentSelector
 from aisynphys.ui.experiment_browser import ExperimentBrowser
-from aisynphys.ui.pulse_response_reviewer import PulseResponseReviewer
 from aisynphys.avg_response_fit import response_query, sort_responses_2p, get_average_response_2p, fit_event_2p
 
 from aisynphys.database import default_db as db
@@ -64,11 +63,10 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.ptree.addParameters(self.comment_param)
         self.comment_param.child('Hashtag').sigValueChanged.connect(self.add_text_to_comments)
 
-        self.manual_qc_btn = pg.QtGui.QPushButton('Open ResponsePulse QC gui')
         self.save_btn = pg.FeedbackButton('Save Analysis')
 
         v_splitter = pg.QtGui.QSplitter(pg.QtCore.Qt.Vertical)
-        for widget in [self.ptree, self.manual_qc_btn, self.save_btn]:
+        for widget in [self.ptree, self.save_btn]:
             v_splitter.addWidget(widget)
         v_splitter.setStretchFactor(0,5)
 
@@ -85,7 +83,6 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.expt_browser.itemSelectionChanged.connect(self.new_pair_selected)
 
         self.save_btn.clicked.connect(self.save_to_db)
-        self.manual_qc_btn.clicked.connect(self.open_qc_gui)
 
     def set_expts(self, expts):
         with pg.BusyCursor():
@@ -131,7 +128,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.pair_param.setValue(pair)
 
             self.load_pair(pair, user_qc=user_qc)
-            if record is not None and record.modification_time is not None:
+            if record is not None:
                 self.load_saved_fit(record)
             self.selectTabWidget.setCurrentIndex(2)
 
@@ -198,17 +195,17 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         if len(saved_categories) > 0: # sanity check
             raise Exception("Previously saved categories %s, but no analyzer was found for these."%saved_categories)
 
-    def reload_pulse_responses(self):
-        record = notes_db.get_pair_notes_record(self.pair.experiment.ext_id, self.pair.pre_cell.ext_id, self.pair.post_cell.ext_id, session=self.notes_db_session)
-        if record is None:
-            return
+    # def reload_pulse_responses(self):
+    #     record = notes_db.get_pair_notes_record(self.pair.experiment.ext_id, self.pair.pre_cell.ext_id, self.pair.post_cell.ext_id, session=self.notes_db_session)
+    #     if record is None:
+    #         return
 
-        user_qc = record.notes.get('user_qc_changes', None)
-        if user_qc is None:
-            return
+    #     user_qc = record.notes.get('user_qc_changes', None)
+    #     if user_qc is None:
+    #         return
 
-        self.sorted_responses = sort_responses_2p(self.pulse_responses, exclude_empty=True, user_qc=user_qc)
-        self.plot_responses()
+    #     self.sorted_responses = sort_responses_2p(self.pulse_responses, exclude_empty=True, user_qc=user_qc)
+    #     self.plot_responses()
 
     # @classmethod
     # def sort_responses(cls, pulse_responses):
@@ -354,10 +351,6 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                 )
                 session.add(entry)
                 session.commit()
-            elif record.modification_time is None: ## we have a record because we excluded traces, but we haven't saved fits yet
-                record.notes=meta
-                record.modification_time=datetime.datetime.now()
-                session.commit()
             else:
                 #self.print_pair_notes(meta, record.notes)
                 #msg = pg.QtGui.QMessageBox.question(None, "Pair Analysis", 
@@ -376,11 +369,6 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         except:
             self.save_btn.failure('Error')
             raise
-
-    def open_qc_gui(self):
-        self.qc_gui = PulseResponseReviewer(self.db_session, self.notes_db_session, mode='opto')
-        self.qc_gui.load(pair=self.pair, sorted_responses=self.sorted_responses)
-        self.qc_gui.sigNewDataSaved.connect(self.reload_pulse_responses)
 
 class CompareDialog(pg.QtGui.QDialog):
 
