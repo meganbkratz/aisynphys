@@ -111,7 +111,10 @@ class PulseResponseReviewer(pg.QtGui.QWidget):
             self.response_tree.addParameters(param)
 
     def pulse_response_selection_changed(self):
-        pr_param = self.response_tree.selectedItems()[0].param
+        selected = self.response_tree.selectedItems()
+        if len(selected) == 0:
+            return
+        pr_param = selected[0].param
         pr = pr_param.pulse_response
         has_presynaptic_data = pr.stim_pulse.first_spike_time != None
 
