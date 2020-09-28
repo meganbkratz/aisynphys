@@ -688,6 +688,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
 
     def plot_responses(self, responses):
+        self.plot_grid.clear()
         self.responses = responses
         qc_color = {'qc_pass': (255, 255, 255, 100), 'qc_fail': (255, 0, 0, 100)}
         
