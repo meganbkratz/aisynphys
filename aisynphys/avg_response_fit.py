@@ -166,6 +166,30 @@ def response_query(session, pair, max_ind_freq=50):
     else:
         q = q.filter(db.MultiPatchProbe.induction_frequency <= max_ind_freq)
         return q
+
+def get_pulse_response(session, expt_id, sync_rec_id, device_name, pulse_number):
+    """Return a particular pulse response from it's external id combination (or None if no response if found).
+
+    expt_id (str)       The external id of the experiment
+    sync_rec_id (int)   The external id of the sync rec (for MIES data this is the sweep number)
+    device_name (str)   The name of the device recording the response.
+    pulse_number (int)  The index of the pulse in the sweep (starting at 0)
+
+    """
+
+    q = session.query(db.PulseResponse)
+    q = q.join(db.Recording, db.PulseResponse.recording)
+    q = q.join(db.StimPulse, db.PulseResponse.stim_pulse)
+    q = q.join(db.SyncRec, db.Recording.sync_rec)
+    q = q.join(db.Experiment, db.SyncRec.experiment)
+
+    q = q.filter(db.Experiment.ext_id == expt_id)
+    q = q.filter(db.SyncRec.ext_id == sync_rec_id)
+    q = q.filter(db.Recording.device_name == str(device_name))
+    q = q.filter(db.StimPulse.pulse_number == pulse_number)
+
+    return q.one_or_none()
+
     
 
 

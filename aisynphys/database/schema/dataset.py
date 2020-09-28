@@ -246,6 +246,23 @@ class PulseResponseBase(object):
             'spike_time': None if spike_time is None else spike_time - align_time,
         })
         return ts
+
+    @property
+    def ext_id(self):
+        """Return a tuple of (experiement.ext_id, sync_rec.ext_id, 
+        recording.device_name, stim_pulse.pulse_number) for use as an 
+        external id.
+        """
+        expt_id = self.pair.experiment.ext_id
+        sync_rec_id = self.recording.sync_rec.ext_id
+        device_name = self.recording.device_name
+        pulse_number = self.stim_pulse.pulse_number
+        return (expt_id, sync_rec_id, device_name, pulse_number)
+
+    def __repr__(self):
+        expt_id, srec_id, dev_name, pulse_n = self.ext_id
+        return "<PulseResponse device:%s, sweep:%i, pulse:%i>"%(dev_name, srec_id, pulse_n)
+
         
 
 PulseResponse = make_table(
