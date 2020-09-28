@@ -120,14 +120,10 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             pre_cell_id = pair.pre_cell.ext_id
             post_cell_id = pair.post_cell.ext_id
             record = notes_db.get_pair_notes_record(expt_id, pre_cell_id, post_cell_id, session=self.notes_db_session)
-            if record is not None:
-                user_qc = record.notes.get('user_qc_changes', [])
-            else:
-                user_qc = []
             
             self.pair_param.setValue(pair)
 
-            self.load_pair(pair, user_qc=user_qc)
+            self.load_pair(pair)
             if record is not None:
                 self.load_saved_fit(record)
             self.selectTabWidget.setCurrentIndex(2)
@@ -139,7 +135,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         self.comment_param.child('').setValue(update_comments)
 
 
-    def load_pair(self, pair, user_qc=None):
+    def load_pair(self, pair):
         """Pull responses from db, sort into groups and plot."""
         with pg.BusyCursor():
             self.pair = pair
@@ -157,7 +153,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.pair_param.child('Gap junction call').setValue(pair.has_electrical)
             
 
-            self.sorted_responses = sort_responses_2p(self.pulse_responses, exclude_empty=True, user_qc=user_qc)
+            self.sorted_responses = sort_responses_2p(self.pulse_responses, exclude_empty=True)
 
             # # filter out categories with no responses
             # self.sorted_responses = OrderedDict()

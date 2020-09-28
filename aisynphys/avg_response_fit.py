@@ -237,7 +237,7 @@ def check_fit_qc_pass(fit_result, expected_params, clamp_mode):
 ##### 2p opto average response analysis functions
 ##### -------------------------------------------
 
-def sort_responses_2p(pulse_responses, exclude_empty=True, user_qc=[]):
+def sort_responses_2p(pulse_responses, exclude_empty=True):
     """Sort a list of pulse_responses into categories based on clamp mode, 
     holding potential, and stimulation power.
 
@@ -284,7 +284,6 @@ def sort_responses_2p(pulse_responses, exclude_empty=True, user_qc=[]):
     sorted_responses = OrderedDict({k:{'qc_pass':[], 'qc_fail':[]} for k in keys})
 
     qc = {False: 'qc_fail', True: 'qc_pass'}
-    user_qc_ids = [tuple(qc[0]) for qc in user_qc]
 
     for pr in pulse_responses:
         clamp_mode = pr.recording.patch_clamp_recording.clamp_mode
@@ -292,10 +291,6 @@ def sort_responses_2p(pulse_responses, exclude_empty=True, user_qc=[]):
         power = pr.stim_pulse.meta.get('pockel_cmd') if pr.stim_pulse.meta is not None else None
 
         key=(pr.recording.sync_rec.experiment.ext_id, pr.recording.sync_rec.ext_id, pr.recording.device_name, pr.stim_pulse.pulse_number)
-        if key in user_qc_ids:
-            user_qc_value=user_qc[user_qc_ids.index(key)]
-        else:
-            user_qc_value=None
 
 
         offset_distance = pr.stim_pulse.meta.get('offset_distance', 0) if pr.stim_pulse.meta is not None else 0
@@ -304,20 +299,14 @@ def sort_responses_2p(pulse_responses, exclude_empty=True, user_qc=[]):
 
         if in_limits1[0] <= holding < in_limits1[1]:
             qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
-            if user_qc_value != None:
-                qc_pass=user_qc_value[1]
             sorted_responses[(clamp_mode, -55, power)][qc_pass].append(pr)
 
         elif in_limits2[0] <= holding < in_limits2[1]:
             qc_pass = qc[pr.in_qc_pass and offset_distance < distance_limit]
-            if user_qc_value != None:
-                qc_pass=user_qc_value[1]
             sorted_responses[(clamp_mode, 0, power)][qc_pass].append(pr)
 
         elif ex_limits[0] <= holding < ex_limits[1]:
             qc_pass = qc[pr.ex_qc_pass and offset_distance < distance_limit]
-            if user_qc_value != None:
-                qc_pass=user_qc_value[1]
             sorted_responses[(clamp_mode, -70, power)][qc_pass].append(pr)
 
     if not exclude_empty:
