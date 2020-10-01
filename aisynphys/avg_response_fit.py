@@ -343,6 +343,72 @@ def sort_responses_2p(pulse_responses, exclude_empty=True):
                 filtered_responses[k]=v
         return filtered_responses
 
+def sort_responses_into_categories_2p(pulse_responses, exclude_empty=True):
+    """Sort a list of pulse_responses into categories based on clamp mode, 
+    holding potential, and stimulation power.
+
+    Category keys are tuples of (clamp mode, holding potential, stimulation), 
+    for example ('ic', -70, 30.0). Stimulation power is reported as the command 
+    to the pockel cell. Stimulation power of None indicates that an electrode 
+    driving an action potential was the source of stimulation. 
+
+    Clamp mode options are 'vc' or 'ic'
+    Holding potential options are -70mV (limits -80 to -60 mV), -55mV (limits
+    -60 to -45 mV) or 0mV (limits -10 to 10 mV). 
+    Stimulation power options are determined by the dataset.
+
+    If exclude_empty is True, then we remove categories that don't have any 
+    responses from the returned dictionary.
+
+    Return a dictionary:
+    {(category1):[list, of, responses], 
+     (category2):[list, of, responses]}
+    """
+    ex_limits = [-80e-3, -60e-3]
+    in_limits1 = [-60e-3, -45e-3]
+    in_limits2 = [-10e-3, 10e-3] ## some experiments were done with Cs+ and held at 0mv
+
+    modes = ['vc', 'ic']
+    holdings = [-70, -55, 0]
+    powers = []
+    for pr in pulse_responses:
+        if pr.stim_pulse.meta is None:
+            powers.append(None)
+        else:
+            powers.append(pr.stim_pulse.meta.get('pockel_cmd'))
+    powers = list(set(powers))
+
+    keys = itertools.product(modes, holdings, powers)
+
+
+
+    sorted_responses = OrderedDict([(k,[]) for k in keys])
+
+    for pr in pulse_responses:
+        clamp_mode = pr.recording.patch_clamp_recording.clamp_mode
+        holding = pr.recording.patch_clamp_recording.baseline_potential
+        power = pr.stim_pulse.meta.get('pockel_cmd') if pr.stim_pulse.meta is not None else None
+
+
+        if in_limits1[0] <= holding < in_limits1[1]:
+            sorted_responses[(clamp_mode, -55, power)].append(pr)
+
+        elif in_limits2[0] <= holding < in_limits2[1]:
+            sorted_responses[(clamp_mode, 0, power)].append(pr)
+
+        elif ex_limits[0] <= holding < ex_limits[1]:
+            sorted_responses[(clamp_mode, -70, power)].append(pr)
+
+    if not exclude_empty:
+        return sorted_responses
+    else:    
+        # filter out categories with no responses
+        filtered_responses = OrderedDict()
+        for k, v in sorted_responses.items():
+            if len(v) > 0:
+                filtered_responses[k]=v
+        return filtered_responses
+
 
 def fit_event_2p(avg_response, clamp_mode, latencies, event_index=0):
     """Event fitting algorithm for two-photon repsonses.

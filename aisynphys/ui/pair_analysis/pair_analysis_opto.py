@@ -12,11 +12,17 @@ from neuroanalysis.data.dataset import TSeries
 from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine, comment_hashtag
 from aisynphys.ui.experiment_selector import ExperimentSelector
 from aisynphys.ui.experiment_browser import ExperimentBrowser
-from aisynphys.avg_response_fit import response_query, sort_responses_2p, get_average_response_2p, fit_event_2p
+from aisynphys.avg_response_fit import response_query, sort_responses_2p, get_average_response_2p, fit_event_2p, sort_responses_into_categories_2p
 
 from aisynphys.database import default_db as db
 from aisynphys.data import data_notes_db as notes_db
 from aisynphys.data import PulseResponseList
+
+
+### list of available reasons for excluding a response from the average that is fit.
+EXCLUSION_REASONS = ["Response includes spontaneous event",
+                    "Response doesnt include an event",
+                    "Response is an outlier"]
 
 
 class OptoPairAnalysisWindow(pg.QtGui.QWidget):
@@ -153,7 +159,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.pair_param.child('Gap junction call').setValue(pair.has_electrical)
             
 
-            self.sorted_responses = sort_responses_2p(self.pulse_responses, exclude_empty=True)
+            #self.sorted_responses = sort_responses_2p(self.pulse_responses, exclude_empty=True)
+            self.sorted_responses = sort_responses_into_categories_2p(self.pulse_responses, exclude_empty=True)
 
             # # filter out categories with no responses
             # self.sorted_responses = OrderedDict()
@@ -162,8 +169,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             #         self.sorted_responses[k]=v
 
             self.create_new_analyzers(self.sorted_responses.keys())
-
-            self.plot_responses()
+            self.set_responses()
 
     def load_saved_fit(self, record):
         notes = record.notes
@@ -288,9 +294,9 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         param.initial_params = result['initial_params']
         param.fit_event_index = result['fit_event_index']
 
-    def plot_responses(self):        
+    def set_responses(self):        
         for i, key in enumerate(self.sorted_responses.keys()):
-            self.analyzers[key].plot_responses(self.sorted_responses[key])
+            self.analyzers[key].set_responses(self.sorted_responses[key])
 
 
     def generate_warnings(self):
@@ -444,9 +450,11 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         pg.QtGui.QWidget.__init__(self)
         layout = pg.QtGui.QHBoxLayout()
         layout.setContentsMargins(0,0,0,0)
+        layout.setSpacing(3)
         self.setLayout(layout)
 
         h_splitter = pg.QtGui.QSplitter(pg.QtCore.Qt.Horizontal)
+        h_splitter.setContentsMargins(0,0,0,0)
         layout.addWidget(h_splitter)
 
         self.responses = None ## holder for {pass:[tseries], fail:[tseries]}
@@ -454,20 +462,30 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         self.event_counter = 0
 
         self.key = key
+        self.mode = {-70:'excitatory', -55:'inhibitory', 0:'inhibitory'}[self.key[1]] if self.key is not None else None
         self.clamp_mode = self.key[0] if self.key is not None else None
         self.has_presynaptic_data = (key != None) and (key[2] == None)
         self.host = host
-        self.param_tree = pg.parametertree.ParameterTree()
+        self.event_param_tree = pg.parametertree.ParameterTree(showHeader=False)
+        self.response_param_tree = pg.parametertree.ParameterTree(showHeader=False)
         self.plot_grid=PlotGrid()
         self.add_btn = pg.FeedbackButton("Add analysis")
         self.add_btn.clicked.connect(self.add_analysis_btn_clicked)
 
         v_widget = pg.QtGui.QWidget()
         v_layout = pg.QtGui.QVBoxLayout()
+
+        self.tabWidget = pg.QtGui.QTabWidget()
+        self.tabWidget.setContentsMargins(0,0,0,0)
+        tab_layout = pg.QtGui.QGridLayout()
+        tab_layout.setContentsMargins(0,0,0,0)
+        self.tabWidget.setLayout(tab_layout)
+        self.tabWidget.addTab(self.event_param_tree, "Events")
+        self.tabWidget.addTab(self.response_param_tree, "Responses")
         
         v_layout.setSpacing(3)
         v_widget.setLayout(v_layout)
-        v_layout.addWidget(self.param_tree)
+        v_layout.addWidget(self.tabWidget)
         v_layout.addWidget(self.add_btn)
         v_layout.setContentsMargins(0,0,0,0)
         v_widget.setContentsMargins(0,0,0,0)
@@ -483,7 +501,15 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         h_splitter.addWidget(self.plot_grid)
 
         self.event_params = pg.parametertree.Parameter.create(name="Events", type='group', addText='Add event')
-        self.param_tree.addParameters(self.event_params)
+        self.event_param_tree.addParameters(self.event_params)
+
+        self.response_param = pg.parametertree.Parameter.create(name="Responses", type='group')
+        self.offset_param = pg.parametertree.Parameter.create(name="Plot w/ offset", type='bool', value=False)
+        self.offset_param.sigValueChanged.connect(self.plot_responses)
+        self.response_param_tree.addParameters(self.offset_param)
+        self.response_param_tree.addParameters(self.response_param)
+        self.response_param_tree.currentItemChanged.connect(self.responseParamSelectionChanged)
+
         try:
             self.event_params.sigAddNew.connect(self.add_event_param)
         except AttributeError:
@@ -670,8 +696,107 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         else:
             param.child('Fit results').child('NRMSE').setValue('%0.2f'%nrmse)
 
+    def set_responses(self, responses):
+        """Supply this response analyzer with a list of pulse responses"""
+        self.responses = responses
+        global EXCLUSION_REASONS
+        qc_check = {'inhibitory':'in_qc_pass', 'excitatory':'ex_qc_pass'}.get(self.mode)
+        for pr in responses:
+            expt_id, sweep_n, dev_name, pulse_n = pr.ext_id
+            name="sweep %i: pulse %i" % (sweep_n, pulse_n)
+            qc_pass = getattr(pr, qc_check)
+            param = pg.parametertree.Parameter.create(name=name, type='bool', value=qc_pass, enabled=qc_pass, expanded=(not qc_pass), children=[
+                {'name':'exclusion reasons', 'type':'list', 'value':None, 'values':[None].extend(EXCLUSION_REASONS)}])
+            param.pulse_response = pr
+            self.response_param.addChild(param)
+            param.sigValueChanged.connect(self.plot_responses)
 
-    def plot_responses(self, responses):
+        self.plot_responses()
+
+    def plot_responses(self):
+        self.plot_grid.clear()
+
+        included = []
+        excluded = []
+        failed = []
+        colors = [(255,0,0,100),(255, 150, 0, 100), (255,255,255,100)]
+
+        ### sort responses into groups based on whether they are included, manually excluded, or failed qc
+        for param in self.response_param.children():
+            if param.value():
+                included.append(param)
+            elif param.opts['enabled']:
+                excluded.append(param)
+            else:
+                failed.append(param)
+
+        ### plot responses in each group
+        for i, params in enumerate([failed, excluded, included]):
+            if len(params) == 0:
+                continue
+
+            prs = map(lambda x: x.pulse_response, params)
+            prl = PulseResponseList(prs)
+            if not self.has_presynaptic_data:
+                post_ts = prl.post_tseries(align='pulse', bsub=True)
+            else:
+                post_ts = prl.post_tseries(align='spike', bsub=True)
+                pre_ts = prl.pre_tseries(align='spike', bsub=True)
+
+            for j, trace in enumerate(post_ts):
+                item = self.plot_grid[(0,0)].plot(trace.time_values, trace.data, pen=colors[i])
+                item.curve.setClickable(True)
+                params[j].plotDataItem = item
+                item.sigClicked.connect(self.traceClicked)
+
+            if self.has_presynaptic_data:
+                for pr, spike in zip(prl, pre_ts):
+                    item = self.plot_grid[(1,0)].plot(spike.time_values, spike.data, pen=colors[i])
+
+
+            if i == 2: ## included
+                self.average_response = post_ts.mean()
+                item = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
+
+
+        self.plot_grid[(0,0)].autoRange()
+        self.plot_grid[(0,0)].setLabel('bottom', text='Time from stimulus', units='s')
+        self.plot_grid[(0,0)].setLabel('left', units={'ic':'V', 'vc':'A'}.get(self.clamp_mode))
+
+        if self.has_presynaptic_data:
+            self.plot_grid[(1,0)].autoRange()
+            self.plot_grid[(1,0)].setLabel('bottom', units='s')
+            self.plot_grid[(1,0)].setLabel('left', units='V')
+
+    def traceClicked(self, item):
+        self.recolorTraces(item)
+        for param in self.response_param.children():
+            if param.plotDataItem == item:
+                for paramItem in param.items.keys():
+                    with pg.SignalBlock(paramItem.treeWidget().currentItemChanged, self.responseParamSelectionChanged):
+                        paramItem.treeWidget().setCurrentItem(paramItem)
+
+    def responseParamSelectionChanged(self):
+        param = self.response_param_tree.currentItem().param
+        traceItem = getattr(param, 'plotDataItem', None)
+        self.recolorTraces(traceItem)
+
+
+    def recolorTraces(self, item):
+        for param in self.response_param.children():
+            if param.plotDataItem is item:
+                param.plotDataItem.setPen('g')
+            elif param.value():
+                param.plotDataItem.setPen((255,255,255,100))
+            elif param.opts['enabled']:
+                param.plotDataItem.setPen((255, 150, 0, 100))
+            else:
+                param.plotDataItem.setPen((255,0,0,100))
+
+
+                
+
+    def plot_responses_old(self, responses):
         self.plot_grid.clear()
         self.responses = responses
         qc_color = {'qc_pass': (255, 255, 255, 100), 'qc_fail': (255, 0, 0, 100)}
