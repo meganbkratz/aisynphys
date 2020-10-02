@@ -44,25 +44,44 @@ class ExperimentSelector(pg.QtGui.QWidget):
 
         self.getExptBtn.clicked.connect(self.get_experiments)
 
+    def set_callback(self, fn):
+        self.callback_fn = fn
+
     def get_experiments(self):
+        print('db:', db)
+        print('self.db_session', self.db_session)
+        prof = pg.debug.Profiler('ExptSelector.get_experiments', disabled=False)
         expt_query = self.db_session.query(db.Experiment)
+        prof.mark('expt_query 1')
         synapse_none = self.data_type['Synapse is None']
         if synapse_none:
             subquery = db.query(db.Pair.experiment_id).filter(db.Pair.has_synapse==None).subquery()
+            prof.mark('query 2')
             expt_query = expt_query.filter(db.Experiment.id.in_(subquery))
+            prof.mark('filter 3')
         selected_rigs = [rig.name() for rig in self.rig_select.children() if rig.value() is True]
         if len(selected_rigs) != 0:
             expt_query = expt_query.filter(db.Experiment.rig_name.in_(selected_rigs))
+            prof.mark('filter 4')
         selected_operators = [operator.name() for operator in self.operator_select.children() if operator.value()is True]
         if len(selected_operators) != 0:
             expt_query = expt_query.filter(db.Experiment.operator_name.in_(selected_operators))
+            prof.mark('filter 5')
         selected_hashtags = [ht.name() for ht in self.hash_select.children()[1:] if ht.value() is True]
         if len(selected_hashtags) != 0:
             timestamps = self.get_expts_hashtag(selected_hashtags)
+            prof.mark('hashtags 6')
             expt_query = expt_query.filter(db.Experiment.ext_id.in_(timestamps))
+            prof.mark('filter 7')
+        prof.mark('pre all 7b')
         expts = expt_query.all()
-        #self.set_expts(expts)
+        prof.mark('all 8')
+        #print(expts[5])
+        #import cProfile
+        #cProfile.runctx('self.sigNewExperimentsRetrieved.emit(expts)', globals(), {'self':self, 'expts':expts}, filename='sigProfile.txt')
         self.sigNewExperimentsRetrieved.emit(expts)
+        #self.callback_fn(expts)
+        prof.mark('emit signal 9')
 
     def get_expts_hashtag(self, selected_hashtags):
         q = self.notes_db_session.query(notes_db.PairNotes)

@@ -38,9 +38,11 @@ class ExperimentBrowser(pg.TreeWidget):
         """
         with pg.BusyCursor():
             # if all_pairs is set to True, all pairs from an experiment will be included regardless of whether they have data
+            prof = pg.debug.Profiler('ExptBrowser.populate', disabled=False)
             self.items_by_pair_id = {}
             
             self.session = db.session()
+            prof.mark('got session')
             
             if experiments is None:
                 # preload all cells,pairs so they are not queried individually later on
@@ -53,8 +55,10 @@ class ExperimentBrowser(pg.TreeWidget):
                     
                 recs = q.all()
                 experiments = list(set([rec.Experiment for rec in recs]))
+                prof.mark('queried experiments')
             
             experiments.sort(key=lambda e: e.acq_timestamp if e.acq_timestamp is not None else 0)
+            prof.mark('sorted experiments')
             for expt in experiments:
                 date = expt.acq_timestamp
                 date_str = datetime.fromtimestamp(date).strftime('%Y-%m-%d') if date is not None else None
