@@ -97,7 +97,8 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             if not has_data:
                 self.expt_browser.populate(experiments=expts, all_pairs=True, check_notes_db=True)
             else:
-                self.expt_browser.populate(experiments=expts, check_notes_db=True)
+                #self.expt_browser.populate(experiments=expts, check_notes_db=True)
+                self.expt_browser.populate_2(experiments=expts, check_notes_db=True)
 
         if len(expts) > 0:
             self.selectTabWidget.setCurrentIndex(1)
