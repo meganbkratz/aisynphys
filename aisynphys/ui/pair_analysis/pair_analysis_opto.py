@@ -736,12 +736,10 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 continue
 
             prs = map(lambda x: x.pulse_response, params)
-            prl = PulseResponseList(prs)
-            if not self.has_presynaptic_data:
-                post_ts = prl.post_tseries(align='pulse', bsub=True)
-            else:
-                post_ts = prl.post_tseries(align='spike', bsub=True)
-                pre_ts = prl.pre_tseries(align='spike', bsub=True)
+            prl = PulseResponseList(list(prs))
+            post_ts = prl.post_tseries(align='pulse', bsub=True)
+            if self.has_presynaptic_data:
+                pre_ts = prl.pre_tseries(align='pulse', bsub=True)
 
             for j, trace in enumerate(post_ts):
                 item = self.plot_grid[(0,0)].plot(trace.time_values, trace.data, pen=colors[i])
@@ -750,9 +748,14 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 item.sigClicked.connect(self.traceClicked)
 
             if self.has_presynaptic_data:
-                for pr, spike in zip(prl, pre_ts):
+                for j, spike in enumerate(pre_ts):
                     item = self.plot_grid[(1,0)].plot(spike.time_values, spike.data, pen=colors[i])
+                    item.curve.setClickable(True)
+                    params[j].spikePlotDataItem = item
+                    item.sigClicked.connect(self.traceClicked)
 
+            if len(post_ts) != len(params):
+                raise Exception("Found a different number of traces and parameters -- need to figure out why")
 
             if i == 2: ## included
                 self.average_response = post_ts.mean()
@@ -771,27 +774,36 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
     def traceClicked(self, item):
         self.recolorTraces(item)
         for param in self.response_param.children():
-            if param.plotDataItem == item:
+            if (param.plotDataItem == item) or (getattr(param, 'spikePlotDataItem', None)==item):
                 for paramItem in param.items.keys():
                     with pg.SignalBlock(paramItem.treeWidget().currentItemChanged, self.responseParamSelectionChanged):
                         paramItem.treeWidget().setCurrentItem(paramItem)
 
+
     def responseParamSelectionChanged(self):
         param = self.response_param_tree.currentItem().param
-        traceItem = getattr(param, 'plotDataItem', None)
+        traceItem = getattr(param, 'plotDataItem', [1,2,3]) ## need to default to a different thing than None so that none is not passed to recolorTraces
         self.recolorTraces(traceItem)
 
 
     def recolorTraces(self, item):
         for param in self.response_param.children():
-            if param.plotDataItem is item:
+            if (param.plotDataItem is item) or (getattr(param, 'spikePlotDataItem', None) is item):
                 param.plotDataItem.setPen('g')
+                if hasattr(param, 'spikePlotDataItem'):
+                    param.spikePlotDataItem.setPen('g')
             elif param.value():
                 param.plotDataItem.setPen((255,255,255,100))
+                if hasattr(param, 'spikePlotDataItem'):
+                    param.spikePlotDataItem.setPen((255,255,255,100))         
             elif param.opts['enabled']:
                 param.plotDataItem.setPen((255, 150, 0, 100))
+                if hasattr(param, 'spikePlotDataItem'):
+                    param.spikePlotDataItem.setPen((255, 150, 0, 100))
             else:
                 param.plotDataItem.setPen((255,0,0,100))
+                if hasattr(param, 'spikePlotDataItem'):
+                    param.spikePlotDataItem.setPen((255,0,0,100))
 
 
                 
