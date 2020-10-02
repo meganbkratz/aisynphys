@@ -1,5 +1,6 @@
 import pyqtgraph as pg
 from aisynphys.database import default_db as db
+from sqlalchemy.orm import joinedload
 
 class ExperimentSelector(pg.QtGui.QWidget):
     """A widget for selecting experiments from a synphys database. 
@@ -60,8 +61,8 @@ class ExperimentSelector(pg.QtGui.QWidget):
         if len(selected_hashtags) != 0:
             timestamps = self.get_expts_hashtag(selected_hashtags)
             expt_query = expt_query.filter(db.Experiment.ext_id.in_(timestamps))
-        expts = expt_query.all()
-        #self.set_expts(expts)
+
+        expts = expt_query.options(joinedload(db.Experiment.cell_list)).all()
         self.sigNewExperimentsRetrieved.emit(expts)
 
     def get_expts_hashtag(self, selected_hashtags):
