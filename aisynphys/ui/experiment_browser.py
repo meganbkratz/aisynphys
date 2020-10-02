@@ -63,7 +63,9 @@ class ExperimentBrowser(pg.TreeWidget):
                 expt_item = pg.TreeWidgetItem(map(str, [date_str, expt.ext_id, time_str, expt.rig_name, slice.species, expt.project_name, expt.target_region, slice.genotype, expt.acsf]))
                 expt_item.expt = expt
                 self.addTopLevelItem(expt_item)
-
+                if check_notes_db:
+                    ### pulling these records then sorting here is way faster than making a query for each pair
+                    notes = notes_db.db.default_session.query(notes_db.PairNotes).filter(notes_db.PairNotes.expt_id==expt.ext_id).all()
                 for pair in expt.pair_list:
                     if all_pairs is False and pair.n_ex_test_spikes == 0 and pair.n_in_test_spikes == 0:
                         continue
@@ -72,8 +74,14 @@ class ExperimentBrowser(pg.TreeWidget):
                     cells = '%s => %s' % (pair.pre_cell.ext_id, pair.post_cell.ext_id)
                     conn = {True:"syn", False:"-", None:"?"}[pair.has_synapse]
                     if check_notes_db:
-                        rec = notes_db.get_pair_notes_record(expt.ext_id, pair.pre_cell.ext_id, pair.post_cell.ext_id)
-                        if rec is not None:
+                        recs = []
+                        for rec in notes:
+                            if rec.pre_cell_id == pair.pre_cell.ext_id:
+                                if rec.post_cell_id == pair.post_cell.ext_id:
+                                    recs.append(rec)
+                        if len(recs) > 1:
+                            raise Exception("Multiple records found in pair_notes for pair %s %s %s!" % (expt.ext_id, pair.pre_cell.ext_id, pair.post_cell.ext_id))
+                        elif len(recs) == 1:
                             conn += '\t' + 'x'
                     types = 'L%s %s => L%s %s' % (pair.pre_cell.target_layer or "?", pair.pre_cell.cre_type, pair.post_cell.target_layer or "?", pair.post_cell.cre_type)
                     pair_item = pg.TreeWidgetItem([cells, conn, types])
