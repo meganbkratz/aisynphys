@@ -23,7 +23,9 @@ from aisynphys.data import PulseResponseList
 ### list of available reasons for excluding a response from the average that is fit.
 EXCLUSION_REASONS = ["Response includes spontaneous event",
                     "Response doesnt include an event",
-                    "Response is an outlier"]
+                    "Response is an outlier",
+                    "Unable to determine spike time",
+                    "Response failed automated qc"]
 
 
 class OptoPairAnalysisWindow(pg.QtGui.QWidget):
@@ -706,8 +708,12 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             expt_id, sweep_n, dev_name, pulse_n = pr.ext_id
             name="sweep %i: pulse %i" % (sweep_n, pulse_n)
             qc_pass = getattr(pr, qc_check)
-            param = pg.parametertree.Parameter.create(name=name, type='bool', value=qc_pass, enabled=qc_pass, expanded=(not qc_pass), children=[
-                {'name':'exclusion reasons', 'type':'list', 'value':None, 'values':[None].extend(EXCLUSION_REASONS)}])
+            param = pg.parametertree.Parameter.create(name=name, type='bool', value=qc_pass, expanded=False, children=[
+                {'name':'exclusion reasons', 'type':'list', 'value':'None', 'values':['None']+ EXCLUSION_REASONS}])
+            if not qc_pass:
+                param.child('exclusion reasons').setValue('Response failed automated qc')
+                param.child('exclusion reasons').setOpts(readonly=True)
+                param.setOpts(readonly=True)
             param.pulse_response = pr
             self.response_param.addChild(param)
             param.sigValueChanged.connect(self.plot_responses)
@@ -766,7 +772,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         for param in self.response_param.children():
             if param.value():
                 included.append(param)
-            elif param.opts['enabled']:
+            elif not param.opts['readonly']:
                 excluded.append(param)
             else:
                 failed.append(param)
@@ -853,7 +859,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 param.plotDataItem.setPen((255,255,255,100))
                 if hasattr(param, 'spikePlotDataItem'):
                     param.spikePlotDataItem.setPen((255,255,255,100))         
-            elif param.opts['enabled']:
+            elif not param.opts['readonly']:
                 param.plotDataItem.setPen((255, 150, 0, 100))
                 if hasattr(param, 'spikePlotDataItem'):
                     param.spikePlotDataItem.setPen((255, 150, 0, 100))
