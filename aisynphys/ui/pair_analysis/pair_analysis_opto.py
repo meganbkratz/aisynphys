@@ -868,49 +868,6 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 if hasattr(param, 'spikePlotDataItem'):
                     param.spikePlotDataItem.setPen((255,0,0,100))
 
-
-                
-
-    def plot_responses_old(self, responses):
-        self.plot_grid.clear()
-        self.responses = responses
-        qc_color = {'qc_pass': (255, 255, 255, 100), 'qc_fail': (255, 0, 0, 100)}
-        
-        for qc, prs in responses.items():
-            if len(prs) == 0:
-                continue
-            prl = PulseResponseList(prs)
-            if not self.has_presynaptic_data:
-                post_ts = prl.post_tseries(align='pulse', bsub=True)
-            else:
-                post_ts = prl.post_tseries(align='spike', bsub=True)
-                pre_ts = prl.pre_tseries(align='spike', bsub=True)
-            
-            for trace in post_ts:
-                item = self.plot_grid[(0,0)].plot(trace.time_values, trace.data, pen=qc_color[qc])
-                if qc == 'qc_fail':
-                    item.setZValue(-10)
-            if qc == 'qc_pass':
-                self.average_response = post_ts.mean()
-                item = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
-
-            if self.has_presynaptic_data:
-                for pr, spike in zip(prl, pre_ts):
-                    pre_qc = 'qc_pass' if pr.stim_pulse.n_spikes == 1 else 'qc_fail'
-                    item = self.plot_grid[(1,0)].plot(spike.time_values, spike.data, pen=qc_color[qc])
-                    if qc == 'qc_fail':
-                        item.setZValue(-10)
-
-
-        self.plot_grid[(0,0)].autoRange()
-        self.plot_grid[(0,0)].setLabel('bottom', text='Time from stimulus', units='s')
-        self.plot_grid[(0,0)].setLabel('left', units={'ic':'V', 'vc':'A'}.get(self.clamp_mode))
-
-        if self.has_presynaptic_data:
-            self.plot_grid[(1,0)].autoRange()
-            self.plot_grid[(1,0)].setLabel('bottom', units='s')
-            self.plot_grid[(1,0)].setLabel('left', units='V')
-
     def add_analysis_btn_clicked(self):
         try:
 
