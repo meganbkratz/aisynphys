@@ -6,8 +6,9 @@ from collections import OrderedDict
 from neuroanalysis.ui.plot_grid import PlotGrid
 from neuroanalysis.fitting.psp import fit_psp, Psp
 import neuroanalysis.filter as filters
+from neuroanalysis.baseline import float_mode
 import neuroanalysis.event_detection as ev_detect
-from neuroanalysis.data.dataset import TSeries
+from neuroanalysis.data.dataset import TSeries, TSeriesList
 
 from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine, comment_hashtag
 from aisynphys.ui.experiment_selector import ExperimentSelector
@@ -711,7 +712,47 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             self.response_param.addChild(param)
             param.sigValueChanged.connect(self.plot_responses)
 
+        ## align responses by spike or pulse - give each param a .aligned_post_tseries and .aligned_pre_tseries
+        for param in self.response_param.children():
+            self.align_response(param)
+
         self.plot_responses()
+
+    def align_response(self, param):
+        pr = param.pulse_response
+
+        for name in ['pre', 'post']:
+            ts = getattr(pr, name+'_tseries')
+            if ts is None:
+                setattr(param, 'aligned_'+name+'_tseries', None)
+                continue
+            stim_time = pr.stim_pulse.onset_time
+
+            ## do baseline subtraction
+            start_time = max(ts.t0, stim_time-5e-3)
+            baseline_data = ts.time_slice(start_time, stim_time).data
+            if len(baseline_data) == 0:
+                baseline = ts.data[0]
+            else:
+                baseline = float_mode(baseline_data)
+            ts = ts - baseline
+
+            ## align to pulse or spike
+            if self.has_presynaptic_data:
+                stim_time = pr.stim_pulse.first_spike_time
+                if stim_time is None:
+                    setattr(param, 'aligned_'+name+'_tseries', None)
+                    with pg.SignalBlock(param.sigValueChanged, self.plot_responses):
+                        param.setValue(False)
+                        param.setOpts(readonly=True)
+                        param.child('exclusion reasons').setValue('Unable to determine spike time')
+                        param.child('exclusion reasons').setOpts(readonly=True)
+                        #raise Exception('stop')
+                    continue
+            ts = ts.copy(t0=ts.t0 - stim_time)
+            setattr(param, 'aligned_'+name+'_tseries', ts)
+
+
 
     def plot_responses(self):
         self.plot_grid.clear()
@@ -735,29 +776,41 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             if len(params) == 0:
                 continue
 
-            prs = map(lambda x: x.pulse_response, params)
-            prl = PulseResponseList(list(prs))
-            post_ts = prl.post_tseries(align='pulse', bsub=True)
-            if self.has_presynaptic_data:
-                pre_ts = prl.pre_tseries(align='pulse', bsub=True)
+            # prs = map(lambda x: x.pulse_response, params)
+            # prl = PulseResponseList(list(prs))
+            # post_ts = prl.post_tseries(align='pulse', bsub=True)
+            # if self.has_presynaptic_data:
+                # pre_ts = prl.pre_tseries(align='pulse', bsub=True)
 
-            for j, trace in enumerate(post_ts):
-                item = self.plot_grid[(0,0)].plot(trace.time_values, trace.data, pen=colors[i])
-                item.curve.setClickable(True)
-                params[j].plotDataItem = item
-                item.sigClicked.connect(self.traceClicked)
-
-            if self.has_presynaptic_data:
-                for j, spike in enumerate(pre_ts):
-                    item = self.plot_grid[(1,0)].plot(spike.time_values, spike.data, pen=colors[i])
+            # for j, trace in enumerate(post_ts):
+            #     item = self.plot_grid[(0,0)].plot(trace.time_values, trace.data, pen=colors[i])
+            #     item.curve.setClickable(True)
+            #     params[j].plotDataItem = item
+            #     item.sigClicked.connect(self.traceClicked)
+            for param in params:
+                if param.aligned_post_tseries is not None:
+                    item = self.plot_grid[(0,0)].plot(param.aligned_post_tseries.time_values, param.aligned_post_tseries.data, pen=colors[i])
                     item.curve.setClickable(True)
-                    params[j].spikePlotDataItem = item
+                    param.plotDataItem = item
+                    item.sigClicked.connect(self.traceClicked)
+                if param.aligned_pre_tseries is not None:
+                    item = self.plot_grid[(1,0)].plot(param.aligned_pre_tseries.time_values, param.aligned_pre_tseries.data, pen=colors[i])
+                    item.curve.setClickable(True)
+                    param.spikePlotDataItem = item
                     item.sigClicked.connect(self.traceClicked)
 
-            if len(post_ts) != len(params):
-                raise Exception("Found a different number of traces and parameters -- need to figure out why")
+            # if self.has_presynaptic_data:
+            #     for j, spike in enumerate(pre_ts):
+            #         item = self.plot_grid[(1,0)].plot(spike.time_values, spike.data, pen=colors[i])
+            #         item.curve.setClickable(True)
+            #         params[j].spikePlotDataItem = item
+            #         item.sigClicked.connect(self.traceClicked)
+
+            #if len(post_ts) != len(params):
+            #    raise Exception("Found a different number of traces and parameters -- need to figure out why")
 
             if i == 2: ## included
+                post_ts = TSeriesList(map(lambda x: x.aligned_post_tseries, params))
                 self.average_response = post_ts.mean()
                 item = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
 
@@ -774,6 +827,8 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
     def traceClicked(self, item):
         self.recolorTraces(item)
         for param in self.response_param.children():
+            if not hasattr(param, 'plotDataItem'):
+                continue
             if (param.plotDataItem == item) or (getattr(param, 'spikePlotDataItem', None)==item):
                 for paramItem in param.items.keys():
                     with pg.SignalBlock(paramItem.treeWidget().currentItemChanged, self.responseParamSelectionChanged):
@@ -788,6 +843,8 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
     def recolorTraces(self, item):
         for param in self.response_param.children():
+            if param.aligned_post_tseries is None: ## means we don't have a trace that we can align or plot
+                continue
             if (param.plotDataItem is item) or (getattr(param, 'spikePlotDataItem', None) is item):
                 param.plotDataItem.setPen('g')
                 if hasattr(param, 'spikePlotDataItem'):
