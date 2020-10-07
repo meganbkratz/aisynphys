@@ -475,7 +475,12 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
         self.responses = None ## holder for {pass:[tseries], fail:[tseries]}
         self.average_response = None ## holder for the average response
+        self.avgPlotItem = None
         self.event_counter = 0
+        self.colors = {'failed':(255,0,0,100),
+                       'excluded':(255, 150, 0, 100), 
+                       'included':(255,255,255,100), 
+                       'selected':(0,255,0,255)}
 
         self.key = key
         self.mode = {-70:'excitatory', -55:'inhibitory', 0:'inhibitory'}[self.key[1]] if self.key is not None else None
@@ -552,7 +557,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 p._fit_values = data['fit']
                 p._initial_fit_guesses = data['initial_params']
                 self.update_fit_param_display(p, data['fit'])
-                p.child('Fit passes qc').setValue({'':None, 'True':True, 'False':False}.get(data['fit_pass']))
+                p.child('Fit passes qc').setValue(data['fit_pass'])
 
     def add_event_param(self):
         n = len(self.event_params.children())
@@ -722,6 +727,15 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         else:
             param.child('Fit results').child('NRMSE').setValue('%0.2f'%nrmse)
 
+    def clear_fit(self):
+        for event_param in self.event_params.children():
+            if event_param._should_have_fit:
+                if hasattr(event_param, '_fit_plot_item'):
+                    self.plot_grid[(0,0)].removeItem(event_param._fit_plot_item)
+                for name in ['amplitude', 'latency', 'rise time', 'decay tau', 'NRMSE']:
+                    event_param.child('Fit results').child(name).setValue('')
+                event_param.child('Fit passes qc').setValue('')
+
     def set_responses(self, responses):
         """Supply this response analyzer with a list of pulse responses"""
         self.responses = responses
@@ -739,7 +753,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 param.setOpts(readonly=True)
             param.pulse_response = pr
             self.response_param.addChild(param)
-            param.sigValueChanged.connect(self.plot_responses)
+            param.sigValueChanged.connect(self.response_inclusion_changed)
 
         ## align responses by spike or pulse - give each param a .aligned_post_tseries and .aligned_pre_tseries
         for param in self.response_param.children():
@@ -781,68 +795,39 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             ts = ts.copy(t0=ts.t0 - stim_time)
             setattr(param, 'aligned_'+name+'_tseries', ts)
 
-
+    def response_inclusion_changed(self):
+        self.clear_fit()
+        self.plot_responses()
 
     def plot_responses(self):
-        self.plot_grid[(0,0)].clear()
+        for param in self.response_param.children():
+            if hasattr(param, 'plotDataItem'):
+                self.plot_grid[(0,0)].removeItem(param.plotDataItem)
+        self.plot_grid[(1,0)].clear() 
+        if self.avgPlotItem is not None:
+            self.plot_grid[(0,0)].removeItem(self.avgPlotItem)       
 
         included = []
-        excluded = []
-        failed = []
-        colors = [(255,0,0,100),(255, 150, 0, 100), (255,255,255,100)]
-
+    
         ### sort responses into groups based on whether they are included, manually excluded, or failed qc
         for param in self.response_param.children():
             if param.value():
                 included.append(param)
-            elif not param.opts['readonly']:
-                excluded.append(param)
-            else:
-                failed.append(param)
 
-        ### plot responses in each group
-        for i, params in enumerate([failed, excluded, included]):
-            if len(params) == 0:
-                continue
+            if param.aligned_post_tseries is not None:
+                item = self.plot_grid[(0,0)].plot(param.aligned_post_tseries.time_values, param.aligned_post_tseries.data)
+                item.curve.setClickable(True)
+                param.plotDataItem = item
+                item.sigClicked.connect(self.traceClicked)
+            if param.aligned_pre_tseries is not None:
+                item = self.plot_grid[(1,0)].plot(param.aligned_pre_tseries.time_values, param.aligned_pre_tseries.data)
+                item.curve.setClickable(True)
+                param.spikePlotDataItem = item
+                item.sigClicked.connect(self.traceClicked)
 
-            # prs = map(lambda x: x.pulse_response, params)
-            # prl = PulseResponseList(list(prs))
-            # post_ts = prl.post_tseries(align='pulse', bsub=True)
-            # if self.has_presynaptic_data:
-                # pre_ts = prl.pre_tseries(align='pulse', bsub=True)
-
-            # for j, trace in enumerate(post_ts):
-            #     item = self.plot_grid[(0,0)].plot(trace.time_values, trace.data, pen=colors[i])
-            #     item.curve.setClickable(True)
-            #     params[j].plotDataItem = item
-            #     item.sigClicked.connect(self.traceClicked)
-            for param in params:
-                if param.aligned_post_tseries is not None:
-                    item = self.plot_grid[(0,0)].plot(param.aligned_post_tseries.time_values, param.aligned_post_tseries.data, pen=colors[i])
-                    item.curve.setClickable(True)
-                    param.plotDataItem = item
-                    item.sigClicked.connect(self.traceClicked)
-                if param.aligned_pre_tseries is not None:
-                    item = self.plot_grid[(1,0)].plot(param.aligned_pre_tseries.time_values, param.aligned_pre_tseries.data, pen=colors[i])
-                    item.curve.setClickable(True)
-                    param.spikePlotDataItem = item
-                    item.sigClicked.connect(self.traceClicked)
-
-            # if self.has_presynaptic_data:
-            #     for j, spike in enumerate(pre_ts):
-            #         item = self.plot_grid[(1,0)].plot(spike.time_values, spike.data, pen=colors[i])
-            #         item.curve.setClickable(True)
-            #         params[j].spikePlotDataItem = item
-            #         item.sigClicked.connect(self.traceClicked)
-
-            #if len(post_ts) != len(params):
-            #    raise Exception("Found a different number of traces and parameters -- need to figure out why")
-
-            if i == 2: ## included
-                post_ts = TSeriesList(map(lambda x: x.aligned_post_tseries, params))
-                self.average_response = post_ts.mean()
-                item = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
-
+        post_ts = TSeriesList(map(lambda x: x.aligned_post_tseries, included))
+        self.average_response = post_ts.mean()
+        self.avgPlotItem = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
 
         self.plot_grid[(0,0)].autoRange()
         self.plot_grid[(0,0)].setLabel('bottom', text='Time from stimulus', units='s')
@@ -852,6 +837,9 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             self.plot_grid[(1,0)].autoRange()
             self.plot_grid[(1,0)].setLabel('bottom', units='s')
             self.plot_grid[(1,0)].setLabel('left', units='V')
+
+        self.recolorTraces(None)
+
 
     def traceClicked(self, item):
         self.recolorTraces(item)
@@ -866,7 +854,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
     def responseParamSelectionChanged(self):
         param = self.response_param_tree.currentItem().param
-        traceItem = getattr(param, 'plotDataItem', [1,2,3]) ## need to default to a different thing than None so that none is not passed to recolorTraces
+        traceItem = getattr(param, 'plotDataItem', None) 
         self.recolorTraces(traceItem)
 
 
@@ -874,22 +862,22 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         for param in self.response_param.children():
             if param.aligned_post_tseries is None: ## means we don't have a trace that we can align or plot
                 continue
-            if (param.plotDataItem is item) or (getattr(param, 'spikePlotDataItem', None) is item):
-                param.plotDataItem.setPen('g')
+            if (param.plotDataItem is item) or (getattr(param, 'spikePlotDataItem', 'null_place_holder') is item): ## need to default to a different thing than None so that none is not passed to recolorTraces
+                param.plotDataItem.setPen(self.colors['selected'])
                 if hasattr(param, 'spikePlotDataItem'):
-                    param.spikePlotDataItem.setPen('g')
+                    param.spikePlotDataItem.setPen(self.colors['selected'])
             elif param.value():
-                param.plotDataItem.setPen((255,255,255,100))
+                param.plotDataItem.setPen(self.colors['included'])
                 if hasattr(param, 'spikePlotDataItem'):
-                    param.spikePlotDataItem.setPen((255,255,255,100))         
+                    param.spikePlotDataItem.setPen(self.colors['included'])         
             elif not param.opts['readonly']:
-                param.plotDataItem.setPen((255, 150, 0, 100))
+                param.plotDataItem.setPen(self.colors['excluded'])
                 if hasattr(param, 'spikePlotDataItem'):
-                    param.spikePlotDataItem.setPen((255, 150, 0, 100))
+                    param.spikePlotDataItem.setPen(self.colors['excluded'])
             else:
-                param.plotDataItem.setPen((255,0,0,100))
+                param.plotDataItem.setPen(self.colors['failed'])
                 if hasattr(param, 'spikePlotDataItem'):
-                    param.spikePlotDataItem.setPen((255,0,0,100))
+                    param.spikePlotDataItem.setPen(self.colors['failed'])
 
     def get_response_lists(self):
         """Return a tuple with a list of ext_ids of included responses and a 
