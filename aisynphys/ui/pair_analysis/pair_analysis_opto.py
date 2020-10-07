@@ -175,6 +175,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             self.set_responses()
 
     def load_saved_fit(self, record):
+
         notes = record.notes
         self.pair_param.child('Synapse call').setValue(notes.get('synapse_type', 'not specified'))
         self.pair_param.child('Gap junction call').setValue(notes.get('gap_junction', False))
@@ -183,18 +184,21 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         saved_categories = list(notes['categories'].keys()) # sanity check
 
         for cat in self.analyzers.keys():
-            data = notes['categories'].get(str(cat), None)
+            data = notes['categories'].get(str(cat), {})
             saved_categories.remove(str(cat))
-            if data is not None:
+            if len(data) > 0:
                 p = self.category_param.child(str(cat))
                 p.child('status').setValue('previously analyzed')
                 p.child('number_of_events').setValue(data['n_events'])
                 p.child('number_of_events').show()
                 p.child('user_passed_fit').setValue(data['fit_pass'])
                 p.child('user_passed_fit').show()
-                p.fit = data['fit_parameters']
-                p.initial_params = data['initial_parameters']
-                p.event_times = data['event_times']
+                p.result = data
+                #p.fit = data['fit_parameters']
+                #p.initial_params = data['initial_parameters']
+                #p.event_times = data['event_times']
+                #p.included_responses = data.get('included_responses')
+                #p.excluded_responses = data.get('excluded_responses')
                 self.analyzers[cat].load_saved_data(data)
 
         if len(saved_categories) > 0: # sanity check
@@ -292,10 +296,13 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
             param.child('user_passed_fit').setValue(str(result['fit_pass']))
             param.child('user_passed_fit').show()
 
-        param.fit = result['fit']
-        param.event_times = result['event_times']
-        param.initial_params = result['initial_params']
-        param.fit_event_index = result['fit_event_index']
+        # param.fit = result['fit']
+        # param.event_times = result['event_times']
+        # param.initial_params = result['initial_params']
+        # param.fit_event_index = result['fit_event_index']
+        # param.included_responses = result['included_responses']
+        # param.excluded_responses = result['excluded_responses']
+        param.result = result
 
     def set_responses(self):        
         for i, key in enumerate(self.sorted_responses.keys()):
@@ -318,7 +325,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
 
             session = notes_db.db.session(readonly=False)
             record = notes_db.get_pair_notes_record(expt_id, pre_cell_id, post_cell_id, session=session)
-            meta = {} if record is None else record.meta
+            meta = {} if record is None else record.notes.copy()
 
             new_meta = {
                 'expt_id': self.pair.experiment.ext_id,
@@ -327,22 +334,27 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                 'synapse_type': synapse_call,
                 'gap_junction': self.pair_param['Gap junction call'],
                 'comments': self.comment_param[''],
-                'categories':{str(key):None for key in self.sorted_responses.keys()}
+                'categories':{str(key):{} for key in self.sorted_responses.keys()}
             }
 
-
-            if synapse_call is not None:
-                for key in self.sorted_responses.keys():
-                    param = self.category_param.child(str(key))
-                    if param['status'] in ['done', 'previously analyzed']:
-                        new_meta['categories'][str(key)]={
-                            'initial_parameters':param.initial_params,
-                            'fit_parameters': param.fit,
-                            'fit_pass': param['user_passed_fit'],
-                            'n_events': param['number_of_events'],
-                            'event_times':param.event_times,
-                            'fit_event_index':param.fit_event_index
-                            }
+            for key in self.sorted_responses.keys():
+                param = self.category_param.child(str(key))
+                if param['status'] in ['done', 'previously analyzed']:
+                    new_meta['categories'][str(key)].update(param.result)
+                        # {
+                        # 'included_responses':param.result.get('included_responses'),
+                        # 'excluded_responses':param.result.get('excluded_responses')
+                        # })
+                    #if synapse_call is not None:
+                        #new_meta['categories'][str(key)].update(
+                            # {
+                            # 'initial_parameters':param.initial_params,
+                            # 'fit_parameters': param.fit,
+                            # 'fit_pass': param['user_passed_fit'],
+                            # 'n_events': param['number_of_events'],
+                            # 'event_times':param.event_times,
+                            # 'fit_event_index':param.fit_event_index})
+                            
 
             meta.update(new_meta)
 
@@ -367,6 +379,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
                     record.modification_time = datetime.datetime.now()
                     session.commit() 
                 else:
+                    session.rollback()
                     raise Exception('Save Cancelled')
             session.close()
             self.save_btn.success('Saved.')
@@ -519,16 +532,26 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             raise Exception('PairAnalysis requires Pyqtgraph 0.11.0 or greater. (current version is %s)'%str(pg.__version__))
 
     def load_saved_data(self, data):
+        ### exclude traces that were excluded before 
+        ###  - don't re-include traces if they've since been excluded 
+        ###    -- but maybe we should indicate that the fit's no longer good?
+        for param in self.response_param.children():
+            if param.value():
+                ext_id = str(param.pulse_response.ext_id)
+                if ext_id in data['excluded_responses'].keys():
+                    param.setValue(False)
+                    param.child('exclusion reasons').setValue(data['excluded_responses'][ext_id])
+
         for time in data['event_times']:
             p = self.add_event_param()
             p.child('user_latency').setValue(time)
 
         for p in self.event_params.children():
             if p._should_have_fit:
-                self.plot_fit(p, data['fit_parameters'])
-                p._fit_values = data['fit_parameters']
-                p._initial_fit_guesses = data['initial_parameters']
-                self.update_fit_param_display(p, data['fit_parameters'])
+                self.plot_fit(p, data['fit'])
+                p._fit_values = data['fit']
+                p._initial_fit_guesses = data['initial_params']
+                self.update_fit_param_display(p, data['fit'])
                 p.child('Fit passes qc').setValue({'':None, 'True':True, 'False':False}.get(data['fit_pass']))
 
     def add_event_param(self):
@@ -761,7 +784,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
 
 
     def plot_responses(self):
-        self.plot_grid.clear()
+        self.plot_grid[(0,0)].clear()
 
         included = []
         excluded = []
@@ -868,6 +891,20 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 if hasattr(param, 'spikePlotDataItem'):
                     param.spikePlotDataItem.setPen((255,0,0,100))
 
+    def get_response_lists(self):
+        """Return a tuple with a list of ext_ids of included responses and a 
+        dict of {response_ext_id:[exclusion_reasons]} for excluded responses."""
+
+        included = []
+        excluded = {}
+        for param in self.response_param.children():
+            if param.value():
+                included.append(str(param.pulse_response.ext_id))
+            else:
+                excluded[str(param.pulse_response.ext_id)]=param.child('exclusion reasons').value()
+
+        return (included, excluded)
+
     def add_analysis_btn_clicked(self):
         try:
 
@@ -891,13 +928,17 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 ### need to figure out why this is happening
                 raise Exception('Error: More than one fit found. This is a bug')
 
+            included, excluded = self.get_response_lists()
+
             res = {'category_name':self.key,
                    'fit': fit,
                    'fit_pass':fit_pass,
                    'initial_params':initial_params,
                    'n_events':len(self.event_params.children()),
                    'event_times':[p['user_latency'] for p in self.event_params.children()],
-                   'fit_event_index':event_index}
+                   'fit_event_index':event_index,
+                   'included_responses':included,
+                   'excluded_responses':excluded}
             self.sigNewAnalysisAvailable.emit(res)
             self.add_btn.success('Added.')
 
