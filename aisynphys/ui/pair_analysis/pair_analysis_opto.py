@@ -814,7 +814,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 step = 1e-3
             else:
                 step = 15e-12
-            offset = np.flip(np.linspace(step, step*len(self.response_param.children()), len(self.response_param.children())))
+            offset = np.flip(np.linspace(step, step*len(self.response_param.children()), len(self.response_param.children())), axis=0)
         else:
             offset = np.zeros(len(self.response_param.children()))
 
