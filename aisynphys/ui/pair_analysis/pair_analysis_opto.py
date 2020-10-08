@@ -708,6 +708,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         if hasattr(event_param, '_fit_plot_item'):
             self.plot_grid[(0,0)].removeItem(event_param._fit_plot_item)
         event_param._fit_plot_item = self.plot_grid[(0,0)].plot(self.average_response.time_values, y, pen=event_param['display_color'])
+        event_param._fit_plot_item.setZValue(20)
 
         
 
@@ -828,6 +829,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
         post_ts = TSeriesList(map(lambda x: x.aligned_post_tseries, included))
         self.average_response = post_ts.mean()
         self.avgPlotItem = self.plot_grid[(0,0)].plot(self.average_response.time_values, self.average_response.data, pen={'color': 'b', 'width': 2})
+        self.avgPlotItem.setZValue(15)
 
         self.plot_grid[(0,0)].autoRange()
         self.plot_grid[(0,0)].setLabel('bottom', text='Time from stimulus', units='s')
@@ -864,8 +866,10 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 continue
             if (param.plotDataItem is item) or (getattr(param, 'spikePlotDataItem', 'null_place_holder') is item): ## need to default to a different thing than None so that none is not passed to recolorTraces
                 param.plotDataItem.setPen(self.colors['selected'])
+                param.plotDataItem.setZValue(10)
                 if hasattr(param, 'spikePlotDataItem'):
                     param.spikePlotDataItem.setPen(self.colors['selected'])
+                    param.spikePlotDataItem.setZValue(10)
             elif param.value():
                 param.plotDataItem.setPen(self.colors['included'])
                 if hasattr(param, 'spikePlotDataItem'):
@@ -878,6 +882,11 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 param.plotDataItem.setPen(self.colors['failed'])
                 if hasattr(param, 'spikePlotDataItem'):
                     param.spikePlotDataItem.setPen(self.colors['failed'])
+
+            if not ((param.plotDataItem is item) or (getattr(param, 'spikePlotDataItem', 'null_place_holder') is item)):
+                param.plotDataItem.setZValue(0)
+                if hasattr(param, 'spikePlotDataItem'):
+                    param.spikePlotDataItem.setZValue(0)
 
     def get_response_lists(self):
         """Return a tuple with a list of ext_ids of included responses and a 
