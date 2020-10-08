@@ -314,9 +314,6 @@ def sort_responses_2p(pulse_responses, exclude_empty=True):
         holding = pr.recording.patch_clamp_recording.baseline_potential
         power = pr.stim_pulse.meta.get('pockel_cmd') if pr.stim_pulse.meta is not None else None
 
-        key=(pr.recording.sync_rec.experiment.ext_id, pr.recording.sync_rec.ext_id, pr.recording.device_name, pr.stim_pulse.pulse_number)
-
-
         offset_distance = pr.stim_pulse.meta.get('offset_distance', 0) if pr.stim_pulse.meta is not None else 0
         if offset_distance is None: ## early photostimlogs didn't record the offset between the stimulation plane and the cell
             offset_distance = 0
