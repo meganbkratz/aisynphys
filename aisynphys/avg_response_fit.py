@@ -11,6 +11,7 @@ from aisynphys.database import default_db as db
 import aisynphys.data.data_notes_db as notes_db
 from aisynphys.qc import spike_qc
 from aisynphys.fitting import fit_avg_pulse_response
+from sqlalchemy.orm import joinedload, undefer
 
 
 def get_pair_avg_fits(pair, session, notes_session=None, ui=None, max_ind_freq=50):
@@ -260,6 +261,31 @@ def check_fit_qc_pass(fit_result, expected_params, clamp_mode):
 
 ##### 2p opto average response analysis functions
 ##### -------------------------------------------
+
+def response_query_2p(session, pair, include_data=False):
+    """Return a list of PulseResponses associated with the given pair. This
+    function eagerloads the associated records from StimPulse, Recording, 
+    PatchClampRecording, SyncRecording, Pair and Experiment. (This reduces the 
+        number of downstream queries which significantly speeds things up, 
+        particularly for slower connections.)
+
+    If include_data is True, then also eagerload the post_tseries and pre_tseries data."""
+
+    q = session.query(db.PulseResponse)
+    q = q.filter(db.PulseResponse.pair_id == pair.id)
+    q = q.options(joinedload(db.PulseResponse.stim_pulse))
+    q = q.options(joinedload(db.PulseResponse.recording))
+    q = q.options(joinedload(db.PulseResponse.recording, db.Recording.patch_clamp_recording))
+    q = q.options(joinedload(db.PulseResponse.recording, db.Recording.sync_rec))
+    q = q.options(joinedload(db.PulseResponse.pair))
+    q = q.options(joinedload(db.PulseResponse.pair, db.Pair.experiment))
+
+    if include_data:
+        q = q.options(undefer(db.PulseResponse.data))
+        q = q.options(undefer(db.PulseResponse.stim_pulse, db.StimPulse.data))
+
+    return q.all()
+
 
 def sort_responses_2p(pulse_responses, exclude_empty=True):
     """Sort a list of pulse_responses into categories based on clamp mode, 

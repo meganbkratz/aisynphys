@@ -13,7 +13,7 @@ from neuroanalysis.data.dataset import TSeries, TSeriesList
 from aisynphys.ui.pair_analysis.pair_analysis import ControlPanel, SuperLine, comment_hashtag
 from aisynphys.ui.experiment_selector import ExperimentSelector
 from aisynphys.ui.experiment_browser import ExperimentBrowser
-from aisynphys.avg_response_fit import response_query, sort_responses_2p, get_average_response_2p, fit_event_2p, sort_responses_into_categories_2p
+from aisynphys.avg_response_fit import response_query_2p, sort_responses_2p, get_average_response_2p, fit_event_2p, sort_responses_into_categories_2p
 
 from aisynphys.database import default_db as db
 from aisynphys.data import data_notes_db as notes_db
@@ -149,8 +149,7 @@ class OptoPairAnalysisWindow(pg.QtGui.QWidget):
         with pg.BusyCursor():
             self.pair = pair
             print ('loading responses for %s...' % pair)
-            q = response_query(self.db_session, pair)
-            self.pulse_responses = [q.PulseResponse for q in q.all()]
+            self.pulse_responses = response_query_2p(self.db_session, pair, include_data=True)
             print('got %d pulse responses' % len(self.pulse_responses))
                 
             if pair.has_synapse is True and pair.synapse is not None:
