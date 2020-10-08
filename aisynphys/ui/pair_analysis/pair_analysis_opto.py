@@ -785,7 +785,7 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
                 stim_time = pr.stim_pulse.first_spike_time
                 if stim_time is None:
                     setattr(param, 'aligned_'+name+'_tseries', None)
-                    with pg.SignalBlock(param.sigValueChanged, self.plot_responses):
+                    with pg.SignalBlock(param.sigValueChanged, self.response_inclusion_changed):
                         param.setValue(False)
                         param.setOpts(readonly=True)
                         param.child('exclusion reasons').setValue('Unable to determine spike time')
