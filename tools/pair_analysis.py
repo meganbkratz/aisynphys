@@ -12,6 +12,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--timestamps', type=str, nargs='*')
     parser.add_argument('--dbg', default=False, action='store_true')
+    parser.add_argument('--mode', type=str, default=None)
     parser.add_argument('expt_id', type=str, nargs='?', default=None)
     parser.add_argument('pre_cell_id', type=str, nargs='?', default=None)
     parser.add_argument('post_cell_id', type=str, nargs='?', default=None)
@@ -24,8 +25,16 @@ if __name__ == '__main__':
     default_session = db.session()
     notes_session = notes_db.db.session()
     
-    #mw = PairAnalysisWindow(default_session, notes_session)
-    mw = OptoPairAnalysisWindow(default_session, notes_session)
+    modes = ['multipatch', 'opto']
+    if args.mode is None:
+        print('Warning: no mode specified, defaulting to multipatch. (use --mode=mode, options are %s)'%modes)
+        args.mode = 'multipatch'
+    if args.mode.lower() == 'multipatch':
+        mw = PairAnalysisWindow(default_session, notes_session)
+    elif args.mode.lower() == 'opto':
+        mw = OptoPairAnalysisWindow(default_session, notes_session)
+    else:
+        raise Exception('Mode %s is not valid. Options are %s' % (args.mode, modes))
 
     # timestamps = [r.acq_timestamp for r in db.query(db.Experiment.acq_timestamp).all()]
     timestamps = []
