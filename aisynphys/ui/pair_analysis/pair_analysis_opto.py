@@ -809,14 +809,23 @@ class ResponseAnalyzer(pg.QtGui.QWidget):
             self.plot_grid[(0,0)].removeItem(self.avgPlotItem)       
 
         included = []
-    
-        ### sort responses into groups based on whether they are included, manually excluded, or failed qc
-        for param in self.response_param.children():
+        if self.offset_param.value():
+            if self.clamp_mode == 'ic':
+                step = 1e-3
+            else:
+                step = 15e-12
+            offset = np.flip(np.linspace(step, step*len(self.response_param.children()), len(self.response_param.children())))
+        else:
+            offset = np.zeros(len(self.response_param.children()))
+
+
+
+        for i, param in enumerate(self.response_param.children()):
             if param.value():
                 included.append(param)
 
             if param.aligned_post_tseries is not None:
-                item = self.plot_grid[(0,0)].plot(param.aligned_post_tseries.time_values, param.aligned_post_tseries.data)
+                item = self.plot_grid[(0,0)].plot(param.aligned_post_tseries.time_values, param.aligned_post_tseries.data+offset[i])
                 item.curve.setClickable(True)
                 param.plotDataItem = item
                 item.sigClicked.connect(self.traceClicked)
