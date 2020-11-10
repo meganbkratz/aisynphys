@@ -434,7 +434,7 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                             if key not in baseline_qc_cache:
                                 sr = min(post_rec['primary'].sample_rate, db.default_sample_rate)
                                 data = post_rec['primary'].time_slice(start, stop).resample(sample_rate=sr).data
-                                ex_qc_pass, in_qc_pass, qc_failures = qc.opto_pulse_response_qc_pass(post_rec, [start, stop])
+                                ex_qc_pass, in_qc_pass, qc_failures = qc.opto_pulse_response_qc_pass(post_rec, [start, stop], start+(stop-start)/2.)
                                 baseline_qc_cache[key] = (data, ex_qc_pass, in_qc_pass)
                             else:
                                 (data, ex_qc_pass, in_qc_pass) = baseline_qc_cache[key]
