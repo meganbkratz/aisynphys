@@ -54,6 +54,7 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
         elecs_by_ad_channel = {elec.device_id:elec for elec in expt_entry.electrodes}
         cell_entries = expt_entry.cells ## do this once here instead of multiple times later because it's slooooowwwww
         pairs_by_cell_id = expt_entry.pairs
+        cells_by_stim_point_id = {cell.meta.get('stim_point_ext_id'):cell for cell in cell_entries.values() if cell.meta.get('stim_point_ext_id') is not None}
 
         ## reset counts of test spikes
         for pair in pairs_by_cell_id.values():
@@ -196,10 +197,11 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         continue
                     stim = stim_log[str(int(stim_num))]
                     if stim_log_version == 0:
-                        cell_name = 'Point %i' % stim['stimulationPoint'] 
+                        point_name = 'Point %i' % stim['stimulationPoint'] 
                     else:
-                        cell_name = stim['stimulationPoint']['name']
-                    cell_entry = cell_entries.get(cell_name)
+                        point_name = stim['stimulationPoint']['name']
+                    #cell_entry = cell_entries.get(cell_name)
+                    cell_entry = cells_by_stim_point_id.get(point_name)
 
                     ## get stimulation shape parameters
                     if stim_log_version >=3:
@@ -270,7 +272,7 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         if not qc_pass:
                             pulse_entry.meta['qc_failures'] = qc_failures
                         if cell_entry is None:
-                            pulse_entry.meta.get('warnings', []).append('No cell named "%s" was found in this experiment.' % cell_name)
+                            pulse_entry.meta.get('warnings', []).append('No cell with stim point "%s" was found in this experiment.' % point_name)
 
                         session.add(pulse_entry)
                         pulse_entries[i] = pulse_entry
@@ -384,20 +386,23 @@ class OptoDatasetPipelineModule(DatabasePipelineModule):
                         
                         stim = stim_log[str(int(stim_num))]
                         if stim_log_version == 0:
-                            pre_cell_name = 'Point %i' % stim['stimulationPoint'] 
+                            pre_point_name = 'Point %i' % stim['stimulationPoint'] 
                         else:
-                            pre_cell_name = stim['stimulationPoint']['name']
+                            pre_point_name = stim['stimulationPoint']['name']
 
-                        post_cell_name = str('electrode_'+ str(post_rec.device_id))
+                        pre_cell = cells_by_stim_point_id.get(pre_point_name)
+                        post_cell_name = elecs_by_ad_channel[post_rec.device_id].cell.ext_id
+                        if pre_cell is None:
+                            continue ## no point in adding PulseResponses if we don't have one of the cells - sometimes happens when data collection gets messed up during a crash
 
-                        pair_entry = pairs_by_cell_id.get((pre_cell_name, post_cell_name))
-
+                        pair_entry = pairs_by_cell_id.get((pre_cell.ext_id, post_cell_name))
+                        
                     elif 'led' in stim_rec.device_type.lower():
                         pair_entry = None
 
                     elif isinstance(stim_rec, PatchClampRecording):
-                        pre_cell_name = str('electrode_' + str(stim_rec.device_id))
-                        post_cell_name = str('electrode_'+ str(post_rec.device_id))
+                        pre_cell_name = elecs_by_ad_channel[stim_rec.device_id].cell.ext_id
+                        post_cell_name = elecs_by_ad_channel[post_rec.device_id].cell.ext_id
                         pair_entry = pairs_by_cell_id.get((pre_cell_name, post_cell_name))
 
                     # get all responses, regardless of the presence of a spike
