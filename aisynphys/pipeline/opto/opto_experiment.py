@@ -145,7 +145,7 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
         print("checking for ready expts....")
         for i, expt in enumerate(expts['expt_list']):
             #print("Checking experiment %i/%i"%(i, len(expts['expt_list'])))
-            site_path = os.path.join(config.synphys_data, expt['site_path'])
+            site_path = os.path.join(config.synphys_data, expt['rig_name'].lower(), 'phys', expt['site_path'])
             slice_path = getDirHandle(os.path.split(site_path)[0]).name(relativeTo=getDirHandle(config.synphys_data))
             #print slice_paths
             #if not slice_path in slice_paths:
@@ -168,6 +168,7 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
                 #print('found expt for path:', site_path)
             except Exception as exc:
                 n_errors[expt['experiment']] = exc
+                raise
                 continue
             if slice_mtime is None or slice_success is False:
             #    slice_mtime = 0
@@ -238,11 +239,12 @@ def load_experiment(job_id):
     entry['distances'] = [e for e in all_expts['distances'] if e['exp_id']==job_id]
     #print('create_db_entries for:', entry['site_path'], "job_id:", job_id)
     if entry['site_path'] != '':
-        #expt = Experiment(site_path=os.path.join(config.synphys_data, entry['site_path']), loading_library=opto, meta_info=entry)
-        expt = AI_Experiment(loader=OptoExperimentLoader(site_path=os.path.join(config.synphys_data, entry['site_path'])), meta_info=entry)
+        site_path = os.path.join(config.synphys_data, entry['rig_name'].lower(), 'phys', entry['site_path'])
+        if not os.path.exists(site_path):
+            raise Exception('%s does not exist' % site_path)
+        expt = AI_Experiment(loader=OptoExperimentLoader(site_path=site_path), meta_info=entry)
     else:
         cnx_json = os.path.join(config.connections_dir, entry['experiment'])
-        #expt = Experiment(load_file=cnx_json, loading_library=opto, meta_info=entry)
         expt = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json), meta_info=entry)
 
     return expt

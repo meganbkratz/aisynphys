@@ -34,7 +34,7 @@ class OptoSlicePipelineModule(DatabasePipelineModule):
         dh = getDirHandle(path)
         info = dh.info()
         parent_info = dh.parent().info()
-        
+
         # pull some metadata from LIMS
         #sid = self.find_specimen_name(dh)
         sids = data_model.find_lims_specimen_ids(dh)
@@ -161,10 +161,12 @@ def all_slices():
         for row in reader:
             csv_entries.append(row)
 
-    slice_dirs = sorted([os.path.split(os.path.join(config.synphys_data, exp['site_path']))[0] for exp in csv_entries])
+    slice_dirs = sorted([os.path.split(os.path.join(config.synphys_data, exp['rig_name'].lower(), 'phys', exp['site_path']))[0] for exp in csv_entries])
 
     _all_slices = OrderedDict()
     for path in slice_dirs:
+        if not os.path.exists(path):
+            print("Couldn't find slice at %s"%path)
         dh = getDirHandle(path)
         ts = dh.info().get('__timestamp__')
         if ts is None:
