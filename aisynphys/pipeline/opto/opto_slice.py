@@ -81,13 +81,17 @@ class OptoSlicePipelineModule(DatabasePipelineModule):
                 raise KeyError("Injection %r is unknown in constants.INJECTIONS" % inj)
             genotype = genotype + ';' + constants.INJECTIONS[inj]
 
+        ## calculate animal age if that data is not entered in lims
+        age = limsdata.get('age')
+        if age == 0 and len(limsdata) > 0:
+            age = (timestamp_to_datetime(info['__timestamp__'])-limsdata['date_of_birth']).days
 
         fields = {
             'ext_id':'%.3f'%info['__timestamp__'],
             'acq_timestamp': info['__timestamp__'],
             'species': limsdata.get('organism'),
             'date_of_birth': limsdata.get('date_of_birth'),
-            'age': limsdata.get('age'),
+            'age': age,
             'sex': limsdata.get('sex'),
             'genotype': genotype,
             'orientation': limsdata.get('plane_of_section'),
