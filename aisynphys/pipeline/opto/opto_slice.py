@@ -4,6 +4,7 @@ from optoanalysis import data_model
 import os, glob, re, pickle, time, csv
 from aisynphys import config, lims, constants
 from acq4.util.DataManager import getDirHandle
+from acq4.analysis.dataModels.PatchEPhys import getParent
 from collections import OrderedDict
 from aisynphys.util import datetime_to_timestamp, timestamp_to_datetime
 #import multipatch_analysis.database as db
@@ -38,7 +39,6 @@ class OptoSlicePipelineModule(DatabasePipelineModule):
         # pull some metadata from LIMS
         #sid = self.find_specimen_name(dh)
         sids = data_model.find_lims_specimen_ids(dh)
-        #print('sids:', sids)
         if len(sids) == 0:
             limsdata = {}
         elif len(sids) == 1:
@@ -52,7 +52,6 @@ class OptoSlicePipelineModule(DatabasePipelineModule):
                 vals = list(set([d[key] for d in data]))
                 if len(vals) == 1:
                     limsdata[key] = vals[0]
-
 
         quality = info.get('slice quality', None)
         try:
@@ -153,7 +152,6 @@ def all_slices():
             print("Loaded slice timestamps from cache (%0.1f hours old)" % (age/3600.))
             return pickle.load(open(cachefile, 'r'))
     
-    #slice_dirs = sorted(glob.glob(os.path.join(config.synphys_data, '*', 'slice_*')))
     expt_csv = config.experiment_csv
     csv_entries = []
     with open(expt_csv, 'r') as csv_file:
@@ -161,20 +159,23 @@ def all_slices():
         for row in reader:
             csv_entries.append(row)
 
-    slice_dirs = sorted([os.path.split(os.path.join(config.synphys_data, exp['rig_name'].lower(), 'phys', exp['site_path']))[0] for exp in csv_entries])
-
     _all_slices = OrderedDict()
-    for path in slice_dirs:
-        if not os.path.exists(path):
-            print("Couldn't find slice at %s"%path)
-        dh = getDirHandle(path)
-        ts = dh.info().get('__timestamp__')
+    for exp in csv_entries:
+        if exp['site_path'] == '':
+            _all_slices.update([('%.3f'%0.0, 'place_holder')])
+            continue
+        site_path = os.path.join(config.synphys_data, exp['rig_name'].lower(), 'phys', exp['site_path'])
+        site_dh = getDirHandle(site_path)
+        slice_dh = getParent(site_dh, 'Slice')
+        if not slice_dh.exists():
+            print("Couldn't find slice at %s" % slice_dh.path)
+        ts = slice_dh.info().get('__timestamp__')
         if ts is None:
-            #print("MISSING TIMESTAMP: %s" % path)
+            print("MISSING TIMESTAMP: %s" % path)
             _all_slices.update([('%.3f'%0.0, 'place_holder')])
             continue
         ts = '%0.3f'%ts ## convert timestamp to string here, make sure it has 3 decimal places
-        _all_slices[ts] = path
+        _all_slices[ts] = slice_dh.path
         
     try:
         tmpfile = cachefile+'.tmp'
