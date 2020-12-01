@@ -182,6 +182,7 @@ def all_slices():
         slice_dh = site_dh.parent()
         if slice_dh.info().get('dirType') != 'Slice':
             errors[expt_name]="Parent of %s is not a slice directory." % site_path
+            continue
 
         ts = slice_dh.info().get('__timestamp__')
         if ts is None:
