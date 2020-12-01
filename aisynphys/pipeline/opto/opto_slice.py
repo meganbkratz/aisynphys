@@ -164,28 +164,39 @@ def all_slices():
             csv_entries.append(row)
 
     _all_slices = OrderedDict()
+    errors = {}
     for exp in csv_entries:
+        expt_name = exp['experiment'].split('_conn')[0]
         if exp['site_path'] == '':
             _all_slices.update([('%.3f'%0.0, 'place_holder')])
             continue
+
         site_path = os.path.join(config.synphys_data, exp['rig_name'].lower(), 'phys', exp['site_path'])
         site_dh = getDirHandle(site_path)
-        try:
-            slice_dh = getParent(site_dh, 'Slice')
-        except:
-            expt_name = exp['experiment'].split('_conn')[0]
-            print("Error finding slice for %s. Please check that site path is correct in %s. (Tried %s)" % (expt_name, config.experiment_csv, site_path))
+        if not site_dh.exists():
+            errors[expt_name]="%s does not exist." % site_path
             continue
-        if not slice_dh.exists():
-            print("Couldn't find slice at %s" % slice_dh.path)
+        if site_dh.info().get('dirType') != 'Site':
+            errors[expt_name]="%s is not a site directory." % site_path
             continue
+        slice_dh = site_dh.parent()
+        if slice_dh.info().get('dirType') != 'Slice':
+            errors[expt_name]="Parent of %s is not a slice directory." % site_path
+
         ts = slice_dh.info().get('__timestamp__')
         if ts is None:
-            print("MISSING TIMESTAMP: %s" % path)
-            _all_slices.update([('%.3f'%0.0, 'place_holder')])
+            #print("MISSING TIMESTAMP: %s" % path)
+            #_all_slices.update([('%.3f'%0.0, 'place_holder')])
+            errors[expt_name]= "Slice directory %s is missing a timestamp." % slice_dh.path
             continue
+
         ts = '%0.3f'%ts ## convert timestamp to string here, make sure it has 3 decimal places
         _all_slices[ts] = slice_dh.path
+
+    if len(errors) > 0:
+        print("Encountered %i errors:" % len(errors))
+        for k, v in errors.items():
+            print("    %s : %s" %(k,v))
         
     try:
         tmpfile = cachefile+'.tmp'
