@@ -145,18 +145,16 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
         print("checking for ready expts....")
         for i, expt in enumerate(expts['expt_list']):
             #print("Checking experiment %i/%i"%(i, len(expts['expt_list'])))
-            site_path = os.path.join(config.synphys_data, expt['rig_name'].lower(), 'phys', expt['site_path'])
-            slice_path = getDirHandle(os.path.split(site_path)[0]).name(relativeTo=getDirHandle(config.synphys_data))
-            #print slice_paths
-            #if not slice_path in slice_paths:
-            #    #print("Did not find slice path for %s"%slice_path)
-            #    n_no_slice += 1
-            #    continue
             try:
                 if expt['site_path'] == '':
                     cnx_json = os.path.join(config.connections_dir, expt['experiment'])
                     ex = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json), meta_info=expt)
                 else:
+                    site_path = os.path.join(config.synphys_data, expt['rig_name'].lower(), 'phys', expt['site_path'])
+                    slice_path = getDirHandle(os.path.split(site_path)[0]).name(relativeTo=getDirHandle(config.synphys_data))
+                    if not slice_path in slice_paths:
+                        n_no_slice.append(expt['experiment'])
+                        continue
                     ex = AI_Experiment(loader=OptoExperimentLoader(site_path=site_path))
 
                 raw_data_mtime = ex.last_modification_time
@@ -168,7 +166,6 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
                 #print('found expt for path:', site_path)
             except Exception as exc:
                 n_errors[expt['experiment']] = exc
-                raise
                 continue
             if slice_mtime is None or slice_success is False:
             #    slice_mtime = 0
@@ -177,7 +174,7 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
 
             ready[ex.ext_id] = {'dep_time':max(raw_data_mtime, slice_mtime), 'meta':{'source':site_path}}
         
-        print("Found %d experiments; %d are able to be processed, %d were skipped due to errors, %d were skipped due to missing or failed slice entries." % (len(expts['expt_list']), len(ready), len(n_errors), len(n_no_slice)))
+        print("Found %d experiments; %d are able to be processed, %d will be skipped due to errors, %d will be skipped due to missing or failed slice entries." % (len(expts['expt_list']), len(ready), len(n_errors), len(n_no_slice)))
         if len(n_errors) > 0 or len(n_no_slice) > 0:
             print("-------- skipped experiments: ----------")
             for e, exc in n_errors.items():
