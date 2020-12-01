@@ -170,9 +170,15 @@ def all_slices():
             continue
         site_path = os.path.join(config.synphys_data, exp['rig_name'].lower(), 'phys', exp['site_path'])
         site_dh = getDirHandle(site_path)
-        slice_dh = getParent(site_dh, 'Slice')
+        try:
+            slice_dh = getParent(site_dh, 'Slice')
+        except:
+            expt_name = exp['experiment'].split('_conn')[0]
+            print("Error finding slice for %s. Please check that site path is correct in %s. (Tried %s)" % (expt_name, config.experiment_csv, site_path))
+            continue
         if not slice_dh.exists():
             print("Couldn't find slice at %s" % slice_dh.path)
+            continue
         ts = slice_dh.info().get('__timestamp__')
         if ts is None:
             print("MISSING TIMESTAMP: %s" % path)
