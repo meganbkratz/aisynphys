@@ -148,6 +148,7 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
             try:
                 if expt['site_path'] == '':
                     cnx_json = os.path.join(config.connections_dir, expt['experiment'])
+                    site_path = cnx_json
                     ex = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json), meta_info=expt)
                 else:
                     site_path = os.path.join(config.synphys_data, expt['rig_name'].lower(), 'phys', expt['site_path'])
