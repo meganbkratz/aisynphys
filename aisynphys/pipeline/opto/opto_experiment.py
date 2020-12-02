@@ -148,15 +148,17 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
             try:
                 if expt['site_path'] == '':
                     cnx_json = os.path.join(config.connections_dir, expt['experiment'])
+                    if not os.path.exists(cnx_json):
+                        n_errors[expt['experiment']] = "File not found: %s" % cnx_json
                     site_path = cnx_json
-                    ex = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json), meta_info=expt)
+                    ex = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json, meta_info=expt))
                 else:
                     site_path = os.path.join(config.synphys_data, expt['rig_name'].lower(), 'phys', expt['site_path'])
                     slice_path = getDirHandle(os.path.split(site_path)[0]).name(relativeTo=getDirHandle(config.synphys_data))
                     if not slice_path in slice_paths:
                         n_no_slice.append(expt['experiment'])
                         continue
-                    ex = AI_Experiment(loader=OptoExperimentLoader(site_path=site_path))
+                    ex = AI_Experiment(loader=OptoExperimentLoader(site_path=site_path, meta_info=expt))
 
                 raw_data_mtime = ex.last_modification_time
                 
@@ -240,10 +242,10 @@ def load_experiment(job_id):
         site_path = os.path.join(config.synphys_data, entry['rig_name'].lower(), 'phys', entry['site_path'])
         if not os.path.exists(site_path):
             raise Exception('%s does not exist' % site_path)
-        expt = AI_Experiment(loader=OptoExperimentLoader(site_path=site_path), meta_info=entry)
+        expt = AI_Experiment(loader=OptoExperimentLoader(site_path=site_path, meta_info=entry))
     else:
         cnx_json = os.path.join(config.connections_dir, entry['experiment'])
-        expt = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json), meta_info=entry)
+        expt = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json, meta_info=entry))
 
     return expt
 
