@@ -150,6 +150,7 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
                     cnx_json = os.path.join(config.connections_dir, expt['experiment'])
                     if not os.path.exists(cnx_json):
                         n_errors[expt['experiment']] = "File not found: %s" % cnx_json
+                        continue
                     site_path = cnx_json
                     ex = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json, meta_info=expt))
                 else:
