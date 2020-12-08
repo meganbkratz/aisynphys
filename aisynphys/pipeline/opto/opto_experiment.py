@@ -145,6 +145,7 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
         print("checking for ready expts....")
         for i, expt in enumerate(expts['expt_list']):
             #print("Checking experiment %i/%i"%(i, len(expts['expt_list'])))
+            expt['connections_dir'] = config.connections_dir
             try:
                 if expt['site_path'] == '':
                     cnx_json = os.path.join(config.connections_dir, expt['experiment'])
@@ -238,7 +239,8 @@ def load_experiment(job_id):
 
     entry = all_expts['expt_list'][indices[0]]
     entry['distances'] = [e for e in all_expts['distances'] if e['exp_id']==job_id]
-    #print('create_db_entries for:', entry['site_path'], "job_id:", job_id)
+    entry['connections_dir'] = config.connections_dir ## pass this in so we can look here for a connections file, even if we pass in a site path
+
     if entry['site_path'] != '':
         site_path = os.path.join(config.synphys_data, entry['rig_name'].lower(), 'phys', entry['site_path'])
         if not os.path.exists(site_path):
