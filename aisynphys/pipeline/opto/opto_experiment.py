@@ -153,14 +153,14 @@ class OptoExperimentPipelineModule(DatabasePipelineModule):
                         n_errors[expt['experiment']] = "File not found: %s" % cnx_json
                         continue
                     site_path = cnx_json
-                    ex = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json, meta_info=expt))
+                    ex = AI_Experiment(loader=OptoExperimentLoader(load_file=cnx_json, meta_info=expt), verify=True)
                 else:
                     site_path = os.path.join(config.synphys_data, expt['rig_name'].lower(), 'phys', expt['site_path'])
                     slice_path = getDirHandle(os.path.split(site_path)[0]).name(relativeTo=getDirHandle(config.synphys_data))
                     if not slice_path in slice_paths:
                         n_no_slice.append(expt['experiment'])
                         continue
-                    ex = AI_Experiment(loader=OptoExperimentLoader(site_path=site_path, meta_info=expt))
+                    ex = AI_Experiment(loader=OptoExperimentLoader(site_path=site_path, meta_info=expt), verify=True)
 
                 raw_data_mtime = ex.last_modification_time
                 
