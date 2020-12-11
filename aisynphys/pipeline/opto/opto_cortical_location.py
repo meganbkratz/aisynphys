@@ -36,10 +36,25 @@ class OptoCortexLocationPipelineModule(DatabasePipelineModule):
                 ts = 0.0
             slice_entry = db.slice_from_timestamp(ts, session=session)
 
-            with open(expt.loader.cnx_file) as f:
-                cnx_json = json.load(f)
+            cortex = {}
+            if expt.loader.cnx_file != 'not found':
+                with open(expt.loader.cnx_file) as f:
+                    cnx_json = json.load(f)
+                    cortex = cnx_json.get('CortexMarker', {})
+            if len(cortex) == 0: ## if we don't have a cortex marker in our cnx file maybe we can still pull some positions from the .mosaic
+                if expt.mosaic_file is not None:
+                    with open(expt.mosaic_file) as f:
+                        mosaic = json.load(f)
+                        for item in mosaic['items']:
+                            if item['name'] == 'CortexMarker':
+                                cortex['wmPos'] = item.get('wmPos')
+                                cortex['piaPos'] = item.get('piaPos')
+                                if cortex['wmPos'] is not None and cortex['piaPos'] is not None:
+                                    p1, p2 = cortex['piaPos'], cortex['wmPos']
+                                    cortex['pia_to_wm_distance'] = ((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)**0.5
+                                cortex['layerBounds_percentDepth'] = item.get('roiState', {}).get('layerBounds_percentDepth')
+                                break
 
-            cortex = cnx_json.get('CortexMarker', {})
 
             site_entry = db.CorticalSite(
                     pia_to_wm_distance=cortex.get('pia_to_wm_distance'),
@@ -106,7 +121,12 @@ class OptoCortexLocationPipelineModule(DatabasePipelineModule):
             if success is not True:
                 continue
             expt = load_experiment(expt_id)
-            if expt.loader.get_cnx_file_version(expt.loader.cnx_file) >= 3:
+            if expt.loader.cnx_file == 'not found':
+                if expt.mosaic_file is not None:
+                    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(expt.mosaic_file))
+                else:
+                    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(config.distance_csv))
+            elif expt.loader.get_cnx_file_version(expt.loader.cnx_file) >= 3:
                 mtime = datetime.datetime.fromtimestamp(os.path.getmtime(expt.loader.cnx_file))
             else:
                 mtime = datetime.datetime.fromtimestamp(os.path.getmtime(config.distance_csv))
